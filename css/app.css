@@ -926,3 +926,35 @@ button.ref-chip:hover { border-color: var(--c); }
 .sub-time:disabled { cursor: default; }
 .time-total { margin: -8px 0 14px; }
 .spent-row .link-btn { color: var(--text2); }
+
+/* перестановка колонок */
+.col[data-reorder="1"] > .col-head { cursor: grab; }
+.col-grip { color: var(--text2); opacity: 0; margin-left: -6px; margin-right: -4px; transition: opacity .15s; display: inline-flex; }
+.col-head:hover .col-grip { opacity: 1; }
+@media (hover: none) { .col-grip { opacity: .6; } }
+.col-ghost { position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none; box-shadow: var(--shadow); opacity: .95; overflow: hidden; outline: 1.5px solid var(--accent); }
+.col-ph { flex: none; border: 1.5px dashed var(--accent); border-radius: var(--r-lg); background: var(--accent-soft); }
+.col.drag-src { display: none; }
+.group-bar-gap { flex: 1; }
+
+/* масштаб доски */
+.board.zoom-compact .col { flex-basis: 236px; padding: 10px 8px 6px; }
+.board.zoom-fit { overflow-x: auto; }
+.board.zoom-fit .col:not(.col-new) { flex: 1 1 0; min-width: 150px; padding: 10px 7px 6px; }
+.board.zoom-fit .col-new { flex: 0 0 120px; font-size: 13px; }
+.board.zoom-compact .card, .board.zoom-fit .card { padding: 9px 10px 8px; }
+.board.zoom-compact .card-desc, .board.zoom-fit .card-desc { display: none; }
+.board.zoom-compact .card-title, .board.zoom-fit .card-title { font-size: 13.5px; }
+.board.zoom-compact .card-meta, .board.zoom-fit .card-meta { margin-top: 7px; gap: 7px; }
+.board.zoom-compact .card-top, .board.zoom-fit .card-top { margin-bottom: 5px; }
+.board.zoom-fit .tag, .board.zoom-fit .prio { font-size: 10.5px; padding: 1px 6px; }
+.board.zoom-fit .col-head h2 { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.board.zoom-fit .col-add { font-size: 13px; padding: 8px 6px; }
+.board.zoom-fit .meta-status { display: none; }
+@media (max-width: 860px) { .board.zoom-fit .col:not(.col-new) { flex: 0 0 78vw; } }
+.board.zoom-fit .col-head { gap: 6px; padding: 2px 4px 10px; }
+.board.zoom-fit .col-head h2 { white-space: normal; overflow: visible; line-height: 1.2; }
+.board.zoom-fit .col-head .icon-btn { width: 24px; height: 24px; opacity: 0; transition: opacity .15s; }
+.board.zoom-fit .col:hover .col-head .icon-btn, .board.zoom-fit .col-head .icon-btn:focus-visible { opacity: 1; }
+.board.zoom-fit .col-grip { display: none; }
+@media (hover: none) { .board.zoom-fit .col-head .icon-btn { opacity: 1; } }

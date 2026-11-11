@@ -17,7 +17,7 @@ export const state = {
   route: 'board',
   loaded: false,
   filters: { q: '', assignee: 'all', priority: 'all', category: 'all', department: 'all', period: 'all', kind: 'all', overdue: false },
-  board: { groupBy: 'status', hideDone: true },
+  board: { groupBy: 'status', hideDone: true, zoom: 'normal' },
   mine: { scope: 'week', offset: 0 },
   summary: { scope: 'week', offset: 0, from: '', to: '' },
   openTaskId: null,

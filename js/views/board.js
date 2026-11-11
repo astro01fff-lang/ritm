@@ -140,6 +140,7 @@ export function card(t, { compact = false, hide = '' } = {}) {
 // ---------------------------------------------------------------- колонки доски
 
 const GROUPS = { status: 'Статусы', department: 'Отделы', category: 'Категории' };
+const ZOOMS = { normal: 'Обычно', compact: 'Компактно', fit: 'Всё на экране' };
 const REF = {
   department: { table: 'departments', list: () => myDepartments(), field: 'department_id', one: 'отдел', none: 'Без отдела', add: 'Новый отдел' },
   category: { table: 'categories', list: () => state.categories, field: 'category_id', one: 'категорию', none: 'Без категории', add: 'Новая категория' },
@@ -169,6 +170,7 @@ const laneTasks = (lane, tasks) => tasks.filter((t) => inLane(lane, t)).sort((a,
 
 export function render() {
   const g = state.board.groupBy;
+  const zoom = ZOOMS[state.board.zoom] ? state.board.zoom : 'normal';
   let tasks = filterTasks(state.tasks);
   const hiddenDone = g !== 'status' && state.board.hideDone ? tasks.filter((t) => t.completed_at).length : 0;
   if (g !== 'status' && state.board.hideDone) tasks = tasks.filter((t) => !t.completed_at);
@@ -202,6 +204,11 @@ export function render() {
         ${Object.entries(GROUPS).map(([k, l]) => `<button role="tab" class="tab ${k === g ? 'on' : ''}" data-act="groupBy" data-g="${k}" aria-selected="${k === g}">${l}</button>`).join('')}
       </div>
       ${g !== 'status' ? `<label class="toggle-chip toggle-soft ${state.board.hideDone ? 'on' : ''}"><input type="checkbox" data-on="hideDone" ${state.board.hideDone ? 'checked' : ''}>Скрыть выполненные${hiddenDone ? ` (${hiddenDone})` : ''}</label>` : ''}
+      <span class="group-bar-gap"></span>
+      <span class="muted small">Масштаб:</span>
+      <div class="tabs tabs-sm" role="tablist" aria-label="Масштаб доски">
+        ${Object.entries(ZOOMS).map(([k, l]) => `<button role="tab" class="tab ${k === zoom ? 'on' : ''}" data-act="boardZoom" data-z="${k}" aria-selected="${k === zoom}">${l}</button>`).join('')}
+      </div>
     </div>
     ${filterBar()}
     ${!total ? emptyBoard() : ''}
@@ -210,14 +217,15 @@ export function render() {
       : `Ничего не найдено${state.filters.q ? ` по запросу «${esc(state.filters.q)}»` : ''}. Проверьте фильтры или`} <button class="link-btn" data-act="resetFilters">сбросить ${tasks.length ? 'фильтры' : 'их'}</button></p>` : ''}
     ${g === 'department' && !myDepartments().length ? `<div class="empty-inline">У вас пока нет своих отделов. Добавьте отделы, с которыми работаете, — каждый станет колонкой. Их видите только вы${isLead() ? '' : ' и руководитель'}.
       <button class="btn btn-ghost btn-sm" data-act="addLane">${icon('plus', 16)} Добавить отдел</button></div>` : ''}
-    <div class="board" id="board">
+    <div class="board zoom-${zoom}" id="board">
       ${ls.map((l) => {
         const list = laneTasks(l, tasks);
         const myDep = l.byName ? myDepartments().find((d) => deptKey(d.name) === l.key) : null;
         const preset = g === 'status' ? `data-column="${l.id}"` : g === 'department' ? `data-department="${myDep ? myDep.id : ''}"` : `data-category="${l.none ? '' : l.id}"`;
         return `
-        <section class="col ${l.done ? 'col-done' : ''} ${l.none ? 'col-none' : ''}" data-col="${l.id}">
-          <header class="col-head">
+        <section class="col ${l.done ? 'col-done' : ''} ${l.none ? 'col-none' : ''}" data-col="${l.id}" data-reorder="${canReorder(l) ? 1 : 0}">
+          <header class="col-head" ${canReorder(l) ? 'title="Перетащите заголовок, чтобы переставить колонку"' : ''}>
+            ${canReorder(l) ? `<span class="col-grip" aria-hidden="true">${icon('grip', 14)}</span>` : ''}
             ${l.color ? `<span class="lane-dot" style="--c:${esc(l.color)}"></span>` : ''}
             <h2>${esc(l.name)}</h2><span class="count">${list.length}</span>
             ${l.done && list.some((t) => t.completed_at && canEdit(t)) ? `<button class="icon-btn icon-btn-sm" data-act="archiveColumn" data-id="${l.id}" title="Отправить выполненные в архив" aria-label="Отправить выполненные в архив">${icon('archive', 16)}</button>` : ''}
@@ -257,6 +265,17 @@ actions.archiveColumn = async (el) => {
 
 actions.quickDone = (el) => { const t = taskById(el.dataset.id); if (t) completeTask(t); };
 actions.quickReopen = (el) => { const t = taskById(el.dataset.id); if (t) reopenTask(t); };
+
+// Переставлять колонки: статусы и категории — руководство (общие для всех), свои отделы — каждый
+function canReorder(l) {
+  const g = state.board.groupBy;
+  if (l.none) return false;
+  if (g === 'status' || g === 'category') return isLead();
+  if (g === 'department') return myDepartments().some((d) => deptKey(d.name) === l.key);
+  return false;
+}
+
+actions.boardZoom = (el) => { state.board.zoom = el.dataset.z; saveBoardPrefs(); hooks.render(); };
 
 actions.groupBy = (el) => {
   state.board.groupBy = el.dataset.g; saveBoardPrefs(); hooks.render();
@@ -435,6 +454,115 @@ export function mount(root) {
   const board = $('#board', root);
   if (!board) return;
   board.addEventListener('pointerdown', onDown);
+  board.addEventListener('pointerdown', onColDown);
+}
+
+// ---------------------------------------------------------------- перестановка колонок
+
+let colDrag = null;
+
+function onColDown(e) {
+  const head = e.target.closest('.col-head');
+  const col = head?.closest('.col[data-reorder="1"]');
+  if (!col || e.button > 0 || e.target.closest('button, a, input, select')) return;
+  const startX = e.clientX, startY = e.clientY;
+  const isTouch = e.pointerType !== 'mouse';
+  let started = false, timer = null;
+
+  const begin = () => {
+    started = true;
+    const rect = col.getBoundingClientRect();
+    const ghost = col.cloneNode(true);
+    ghost.classList.add('col-ghost');
+    ghost.style.width = rect.width + 'px';
+    ghost.style.height = Math.min(rect.height, 420) + 'px';
+    document.body.appendChild(ghost);
+    const ph = document.createElement('div');
+    ph.className = 'col-ph';
+    ph.style.width = rect.width + 'px';
+    ph.style.height = Math.min(rect.height, 420) + 'px';
+    col.after(ph);
+    col.classList.add('drag-src');
+    colDrag = { col, ghost, ph, dx: startX - rect.left, dy: startY - rect.top };
+    document.body.classList.add('dragging');
+    moveCol(startX, startY);
+  };
+  const move = (ev) => {
+    if (!started) {
+      const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+      if (isTouch) { if (dist > 10) cleanup(); return; }
+      if (dist > 6) begin(); else return;
+    }
+    ev.preventDefault();
+    moveCol(ev.clientX, ev.clientY);
+  };
+  const up = async (ev) => {
+    cleanup();
+    if (!started) return;
+    ev.preventDefault();
+    await dropCol();
+  };
+  const cleanup = () => {
+    clearTimeout(timer);
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+  };
+  if (isTouch) timer = setTimeout(begin, 280);
+  window.addEventListener('pointermove', move, { passive: false });
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+}
+
+document.addEventListener('touchmove', (e) => { if (colDrag) e.preventDefault(); }, { passive: false });
+
+function moveCol(x, y) {
+  const { ghost, ph, col } = colDrag;
+  ghost.style.transform = `translate(${x - colDrag.dx}px, ${y - colDrag.dy}px) rotate(1.5deg)`;
+  const board = $('#board');
+  const others = $$('.col[data-col]', board).filter((c) => c !== col && c.dataset.reorder === '1');
+  const before = others.find((c) => { const r = c.getBoundingClientRect(); return x < r.left + r.width / 2; });
+  if (before) board.insertBefore(ph, before);
+  else {
+    const last = others.at(-1);
+    if (last) last.after(ph);
+  }
+  const r = board.getBoundingClientRect();
+  if (x > r.right - 60) board.scrollLeft += 16;
+  else if (x < r.left + 60) board.scrollLeft -= 16;
+}
+
+async function dropCol() {
+  const d = colDrag; colDrag = null;
+  document.body.classList.remove('dragging');
+  d.ghost.remove();
+  d.ph.replaceWith(d.col);
+  d.col.classList.remove('drag-src');
+  // новый порядок перетаскиваемых колонок, как они стоят на экране
+  const order = $$('#board .col[data-reorder="1"]').map((c) => c.dataset.col);
+  const g = state.board.groupBy;
+  try {
+    if (g === 'status') await saveOrder(state.columns, (c) => c.id, order, (id, position) => api.updateColumn(id, { position }));
+    else if (g === 'category') await saveOrder(state.categories, (c) => c.id, order, (id, position) => api.updateRef('categories', id, { position }));
+    else if (g === 'department') await saveOrder(myDepartments(), (dep) => 'd-' + deptKey(dep.name), order, (id, position) => api.updateRef('departments', id, { position }));
+  } catch (e) { toast(e.message, 'error'); }
+  hooks.refresh();
+}
+
+// Раздаём позиции по новому порядку и сохраняем только изменившиеся
+async function saveOrder(items, keyOf, order, update) {
+  const sorted = [...items].sort((a, b) => {
+    const ia = order.indexOf(keyOf(a)), ib = order.indexOf(keyOf(b));
+    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib) || a.position - b.position;
+  });
+  const jobs = [];
+  sorted.forEach((it, i) => {
+    const position = (i + 1) * 1000;
+    if (it.position !== position) { it.position = position; jobs.push(update(it.id, position)); }
+  });
+  items.sort((a, b) => a.position - b.position);
+  hooks.render();
+  await Promise.all(jobs);
 }
 
 function onDown(e) {
