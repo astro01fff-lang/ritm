@@ -119,10 +119,10 @@ actions.addMember = () => {
       <div class="modal-head"><h3 class="modal-title">Новый участник</h3>
         <button type="button" class="icon-btn" data-close aria-label="Закрыть">${icon('close')}</button></div>
       <div class="form-grid">
-        <label class="fl" for="nm-first">Имя</label><input id="nm-first" name="firstName" maxlength="80" required>
-        <label class="fl" for="nm-last">Фамилия</label><input id="nm-last" name="lastName" maxlength="80">
-        <label class="fl" for="nm-pos">Должность</label><input id="nm-pos" name="position" maxlength="120">
-        <label class="fl" for="nm-city">Город</label><input id="nm-city" name="city" maxlength="80">
+        <label class="fl" for="nm-first">Имя</label><input id="nm-first" name="firstName" maxlength="80" required autocomplete="off">
+        <label class="fl" for="nm-last">Фамилия</label><input id="nm-last" name="lastName" maxlength="80" autocomplete="off">
+        <label class="fl" for="nm-pos">Должность</label><input id="nm-pos" name="position" maxlength="120" autocomplete="off">
+        <label class="fl" for="nm-city">Город</label><input id="nm-city" name="city" maxlength="80" autocomplete="off">
         <label class="fl" for="nm-role">Роль</label>
         <select id="nm-role" name="role">${Object.entries(ROLE_LABELS).map(([k, l]) => `<option value="${k}" ${k === 'member' ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </div>

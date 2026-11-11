@@ -448,13 +448,13 @@ function showSetup() {
       <label class="fl" for="su-secret">Код установки</label>
       <input id="su-secret" name="secret" autocomplete="off" required placeholder="Из настроек серверной функции (SETUP_SECRET)">
       <label class="fl" for="su-team">Название команды</label>
-      <input id="su-team" name="teamName" maxlength="120" required placeholder="Например, HR и корпкультура">
+      <input id="su-team" name="teamName" maxlength="120" required autocomplete="off" placeholder="Например, HR и корпкультура">
       <div class="two">
-        <div><label class="fl" for="su-first">Ваше имя</label><input id="su-first" name="firstName" maxlength="80" required></div>
-        <div><label class="fl" for="su-last">Фамилия</label><input id="su-last" name="lastName" maxlength="80"></div>
+        <div><label class="fl" for="su-first">Ваше имя</label><input id="su-first" name="firstName" maxlength="80" required autocomplete="off"></div>
+        <div><label class="fl" for="su-last">Фамилия</label><input id="su-last" name="lastName" maxlength="80" autocomplete="off"></div>
       </div>
       <label class="fl" for="su-pos">Должность</label>
-      <input id="su-pos" name="position" maxlength="120">
+      <input id="su-pos" name="position" maxlength="120" autocomplete="off">
       ${pwField('password', 'Пароль для входа, не короче 8 символов', 'new-password')}
       ${pwField('repeat', 'Повторите пароль', 'new-password')}
       <p class="form-error" role="alert"></p>
