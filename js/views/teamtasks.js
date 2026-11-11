@@ -6,7 +6,7 @@ import { filterBar, filterTasks, card } from './board.js';
 import { askPushMessage } from '../task.js';
 
 export function render() {
-  const visible = filterTasks(state.tasks);
+  const visible = filterTasks(state.tasks, state.filters, { ownCopiesOnly: false });
   const groups = {};
   for (const t of visible) if (t.group_id) (groups[t.group_id] ||= []).push(t);
   const groupList = Object.values(groups).filter((g) => g.length > 1 || isLead())

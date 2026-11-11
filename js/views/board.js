@@ -12,7 +12,8 @@ import { moveTask, completeTask, reopenTask } from '../task.js';
 
 // ---------------------------------------------------------------- фильтры
 
-export function filterTasks(tasks, f = state.filters, { archived = false } = {}) {
+// ownCopiesOnly: у задачи, поставленной нескольким людям, на доске показываем только свою копию
+export function filterTasks(tasks, f = state.filters, { archived = false, ownCopiesOnly = true } = {}) {
   const norm = (x) => String(x).toLowerCase().replace(/ё/g, 'е');
   const q = norm(f.q.trim());
   let range = null;
@@ -22,6 +23,7 @@ export function filterTasks(tasks, f = state.filters, { archived = false } = {})
   if (f.period === 'month') range = [toISO(startOfMonth(t0)), toISO(endOfMonth(t0))];
   return tasks.filter((t) => {
     if (!archived && t.archived_at) return false;
+    if (ownCopiesOnly && t.group_id && t.assignee_id !== state.me.id) return false;
     if (q) {
       const hay = norm(`${t.title} ${t.description} ${catById(t.category_id)?.name || ''} ${deptById(t.department_id)?.name || ''}`);
       if (!hay.includes(q)) return false;
