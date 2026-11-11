@@ -14,46 +14,89 @@ import {
 
 const QUICK_TIMES = [[15, '15 мин'], [30, '30 мин'], [60, '1 ч'], [120, '2 ч'], [240, 'Полдня'], [480, 'День']];
 
-export function askTime(task, { title = 'Сколько примерно заняло?', skipLabel = 'Пропустить' } = {}) {
+// Окно ввода времени. mode 'add' — прибавить к уже записанному, 'set' — исправить итог.
+// Возвращает { total, added } или null, если окно закрыли.
+function timeModal({ heading, subtitle, cur = 0, mode = 'add', skipLabel = 'Пропустить', note = '' }) {
   return new Promise((resolve) => {
-    let saved = false;
-    const cur = task.spent_minutes;
+    let done = false;
+    const add = mode === 'add';
     const m = openModal(`
       <div class="time-ask">
-        <div class="time-ask-mark">${icon('checkCircle', 28)}</div>
-        <h3 class="modal-title">${esc(title)}</h3>
-        <p class="muted time-ask-task">${esc(task.title)}</p>
+        <div class="time-ask-mark">${icon(add ? 'checkCircle' : 'clock', 28)}</div>
+        <h3 class="modal-title">${esc(heading)}</h3>
+        <p class="muted time-ask-task">${esc(subtitle)}</p>
+        ${cur ? `<p class="time-total">${add ? 'Уже записано' : 'Сейчас записано'}: <b>${esc(fmtMinutes(cur))}</b>${add ? '. Выбранное время прибавится' : ''}</p>` : ''}
+        ${note ? `<p class="muted small">${esc(note)}</p>` : ''}
         <div class="time-quick">
-          ${QUICK_TIMES.map(([v, l]) => `<button type="button" class="time-chip ${cur === v ? 'on' : ''}" data-min="${v}">${l}</button>`).join('')}
+          ${QUICK_TIMES.map(([v, l]) => `<button type="button" class="time-chip" data-min="${v}">${add && cur ? '+ ' : ''}${l}</button>`).join('')}
         </div>
         <form class="time-custom">
-          <label>Своё время</label>
+          <label>${add ? (cur ? 'Добавить своё время' : 'Своё время') : 'Новый итог'}</label>
           <div class="time-custom-row">
-            <input type="number" min="0" max="999" name="h" placeholder="0" value="${cur != null && !QUICK_TIMES.some(([v]) => v === cur) ? Math.floor(cur / 60) : ''}" aria-label="Часы"> <span>ч</span>
-            <input type="number" min="0" max="59" name="m" placeholder="0" value="${cur != null && !QUICK_TIMES.some(([v]) => v === cur) ? cur % 60 : ''}" aria-label="Минуты"> <span>мин</span>
-            <button class="btn btn-primary" type="submit">Сохранить</button>
+            <input type="number" min="0" max="999" name="h" placeholder="0" value="${!add && cur ? Math.floor(cur / 60) : ''}" aria-label="Часы"> <span>ч</span>
+            <input type="number" min="0" max="59" name="m" placeholder="0" value="${!add && cur ? cur % 60 : ''}" aria-label="Минуты"> <span>мин</span>
+            <button class="btn btn-primary" type="submit">${add && cur ? 'Добавить' : 'Сохранить'}</button>
           </div>
         </form>
+        ${!add && cur ? '<button type="button" class="btn btn-ghost btn-block" data-clear>Обнулить время</button>' : ''}
         <button class="btn btn-ghost btn-block" data-close>${esc(skipLabel)}</button>
-      </div>`, { onClose: () => { if (!saved) resolve(null); } });
-
-    const save = async (minutes) => {
-      saved = true; m.close();
-      const t = taskById(task.id); if (t) t.spent_minutes = minutes;
-      hooks.render(); hooks.renderDrawer();
-      try { await api.updateTask(task.id, { spent_minutes: minutes }); toast(`Записано: ${fmtMinutes(minutes)}`, 'ok'); }
-      catch (e) { toast(e.message, 'error'); hooks.refresh(); }
-      resolve(minutes);
+      </div>`, { onClose: () => { if (!done) resolve(null); } });
+    const finish = (value) => {
+      done = true; m.close();
+      const total = Math.max(0, add ? cur + value : value);
+      resolve({ total, added: total - cur });
     };
-    $$('[data-min]', m.el).forEach((b) => b.addEventListener('click', () => save(Number(b.dataset.min))));
+    $$('[data-min]', m.el).forEach((b) => b.addEventListener('click', () => finish(Number(b.dataset.min))));
+    $('[data-clear]', m.el)?.addEventListener('click', () => finish(0));
     $('.time-custom', m.el).addEventListener('submit', (e) => {
       e.preventDefault();
       const f = new FormData(e.target);
       const minutes = (Number(f.get('h')) || 0) * 60 + (Number(f.get('m')) || 0);
-      if (!minutes) { toast('Укажите часы или минуты', 'error'); return; }
-      save(minutes);
+      if (!minutes && add) { toast('Укажите часы или минуты', 'error'); return; }
+      finish(minutes);
     });
   });
+}
+
+const timeToast = (added, total) =>
+  toast(added > 0 && total !== added ? `+${fmtMinutes(added)}, всего ${fmtMinutes(total)}` : total ? `Записано: ${fmtMinutes(total)}` : 'Время обнулено', 'ok');
+
+// Время задачи. По умолчанию прибавляется к уже записанному.
+export async function askTime(task, { title, skipLabel = 'Пропустить', mode = 'add' } = {}) {
+  const cur = taskById(task.id)?.spent_minutes ?? task.spent_minutes ?? 0;
+  const subSum = drawerData.taskId === task.id ? drawerData.subtasks.reduce((a, x) => a + (x.spent_minutes || 0), 0) : 0;
+  const res = await timeModal({
+    heading: title || (mode === 'set' ? 'Исправить общее время' : cur ? 'Сколько ещё времени ушло?' : 'Сколько примерно заняло?'),
+    subtitle: task.title, cur, mode, skipLabel,
+    note: subSum ? `Из них по подзадачам: ${fmtMinutes(subSum)}` : '',
+  });
+  if (!res) return null;
+  const t = taskById(task.id);
+  const stored = res.total > 0 ? res.total : null;
+  if (t) t.spent_minutes = stored;
+  hooks.render(); renderDrawer();
+  try { await api.updateTask(task.id, { spent_minutes: stored }); timeToast(res.added, res.total); }
+  catch (e) { toast(e.message, 'error'); hooks.refresh(); }
+  return stored;
+}
+
+// Время подзадачи: копится и автоматически прибавляется к задаче
+export async function askSubTime(sub, { mode = 'add', skipLabel = 'Отмена', title } = {}) {
+  const cur = sub.spent_minutes || 0;
+  const res = await timeModal({
+    heading: title || (mode === 'set' ? 'Исправить время подзадачи' : cur ? 'Сколько ещё времени ушло?' : 'Сколько времени заняла подзадача?'),
+    subtitle: sub.title, cur, mode, skipLabel,
+    note: 'Время подзадачи прибавится к общему времени задачи',
+  });
+  if (!res) return null;
+  const delta = res.total - cur;
+  sub.spent_minutes = res.total;
+  const t = taskById(sub.task_id);
+  if (t) t.spent_minutes = Math.max(0, (t.spent_minutes || 0) + delta) || null;
+  hooks.render(); renderDrawer();
+  try { await api.updateSubtask(sub.id, { spent_minutes: res.total }); timeToast(res.added, res.total); }
+  catch (e) { toast(e.message, 'error'); reloadDrawer(); hooks.refresh(); }
+  return res.total;
 }
 
 // ====================================================================== перемещение и выполнение
@@ -405,6 +448,7 @@ export function renderDrawer() {
   const copies = groupCopies(t.group_id);
   const { subtasks, comments, attachments, history, loading } = drawerData;
   const subDone = subtasks.filter((s) => s.done).length;
+  const subSpent = subtasks.reduce((a, x) => a + (x.spent_minutes || 0), 0);
 
   host.innerHTML = `
     <div class="drawer-scrim" data-act="closeTask"></div>
@@ -482,8 +526,10 @@ export function renderDrawer() {
 
           <dt>Потрачено</dt>
           <dd class="spent-row">
-            <span class="${t.spent_minutes ? 'spent-val' : 'muted'}">${t.spent_minutes ? esc(fmtMinutes(t.spent_minutes)) : (t.completed_at ? 'не указано' : 'укажете при выполнении')}</span>
-            ${editable ? `<button class="btn btn-ghost btn-sm" data-act="editTime">${t.spent_minutes ? 'Изменить' : 'Указать'}</button>` : ''}
+            <span class="${t.spent_minutes ? 'spent-val' : 'muted'}">${t.spent_minutes ? esc(fmtMinutes(t.spent_minutes)) : 'пока не указано'}</span>
+            ${subSpent ? `<span class="muted small">из них подзадачи: ${esc(fmtMinutes(subSpent))}</span>` : ''}
+            ${editable ? `<button class="btn btn-ghost btn-sm" data-act="addTime">${icon('plus', 14)} Добавить время</button>` : ''}
+            ${editable && t.spent_minutes ? `<button class="link-btn small" data-act="editTime">исправить итог</button>` : ''}
           </dd>
         </dl>
 
@@ -510,6 +556,8 @@ export function renderDrawer() {
             ${subtasks.map((s) => `<li class="${s.done ? 'done' : ''}">
               <label class="check"><input type="checkbox" data-on="subToggle" data-id="${s.id}" ${s.done ? 'checked' : ''} ${dis}><span></span></label>
               <span class="sub-title">${esc(s.title)}</span>
+              ${s.spent_minutes ? `<button class="sub-time" data-act="subTimeEdit" data-id="${s.id}" ${editable ? '' : 'disabled'} title="Исправить время подзадачи">${icon('clock', 13)} ${esc(fmtMinutes(s.spent_minutes))}</button>` : ''}
+              ${editable ? `<button class="btn btn-ghost btn-xs" data-act="subTime" data-id="${s.id}" title="Добавить время на подзадачу">${icon('plus', 13)} время</button>` : ''}
               ${editable ? `<button class="icon-btn icon-btn-sm" data-act="subDelete" data-id="${s.id}" aria-label="Удалить подзадачу">${icon('close', 14)}</button>` : ''}
             </li>`).join('')}
           </ul>
@@ -687,7 +735,18 @@ inputs.subToggle = async (el) => {
   const t = taskById(state.openTaskId);
   if (t) { t.sub_done = drawerData.subtasks.filter((x) => x.done).length; }
   renderDrawer(); hooks.render();
-  try { await api.updateSubtask(s.id, { done: s.done }); } catch (e) { toast(e.message, 'error'); reloadDrawer(); }
+  try { await api.updateSubtask(s.id, { done: s.done }); } catch (e) { toast(e.message, 'error'); reloadDrawer(); return; }
+  // выполнили подзадачу — спрашиваем время (можно пропустить)
+  if (s.done) await askSubTime(s, { skipLabel: 'Пропустить' });
+};
+
+actions.subTime = (el) => {
+  const s = drawerData.subtasks.find((x) => x.id === el.dataset.id);
+  if (s) askSubTime(s, { mode: 'add' });
+};
+actions.subTimeEdit = (el) => {
+  const s = drawerData.subtasks.find((x) => x.id === el.dataset.id);
+  if (s) askSubTime(s, { mode: 'set' });
 };
 
 inputs.fileUpload = async (el) => {
@@ -721,9 +780,13 @@ actions.archiveOpen = async () => {
   try { await api.archiveTasks([t.id]); toast('Задача в архиве', 'ok'); closeTask(); }
   catch (e) { toast(e.message, 'error'); hooks.refresh(); }
 };
+actions.addTime = () => {
+  const t = taskById(state.openTaskId);
+  if (t) askTime(t, { skipLabel: 'Отмена', mode: 'add' });
+};
 actions.editTime = () => {
   const t = taskById(state.openTaskId);
-  if (t) askTime(t, { title: 'Сколько времени ушло на задачу?', skipLabel: 'Отмена' });
+  if (t) askTime(t, { skipLabel: 'Отмена', mode: 'set' });
 };
 actions.takeTask = () => saveField('assignee_id', state.me.id);
 actions.giveFive = async () => {

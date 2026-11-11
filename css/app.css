@@ -913,3 +913,16 @@ button.ref-chip:hover { border-color: var(--c); }
 /* архив */
 .archived-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); background: var(--bg2); padding: 4px 10px; border-radius: 999px; }
 .view-head .head-actions .btn .muted { font-weight: 500; }
+
+/* время подзадач */
+.btn-xs { padding: 3px 9px; font-size: 12px; gap: 4px; }
+.subtasks li { flex-wrap: nowrap; }
+.subtasks .sub-title { flex: 1; min-width: 0; }
+.subtasks .btn-xs { opacity: 0; transition: opacity .15s; }
+.subtasks li:hover .btn-xs, .subtasks .btn-xs:focus-visible { opacity: 1; }
+@media (hover: none) { .subtasks .btn-xs { opacity: 1; } }
+.subtasks .icon-btn { margin-left: 0; }
+.sub-time { display: inline-flex; align-items: center; gap: 4px; border: 0; background: var(--accent-soft); color: var(--text); border-radius: 999px; padding: 2px 9px; font: 600 12px var(--font); cursor: pointer; white-space: nowrap; }
+.sub-time:disabled { cursor: default; }
+.time-total { margin: -8px 0 14px; }
+.spent-row .link-btn { color: var(--text2); }
