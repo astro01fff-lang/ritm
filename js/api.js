@@ -143,6 +143,11 @@ export async function createTasks(base, assigneeIds, subtasks = []) {
 export const updateTask = async (id, patch) =>
   check(await sb.from('tasks').update(patch).eq('id', id).select().single(), 'сохранение задачи');
 
+export const archiveTasks = async (ids) =>
+  check(await sb.from('tasks').update({ archived_at: new Date().toISOString() }).in('id', ids).select('id'), 'архив');
+export const unarchiveTask = async (id) => check(await sb.from('tasks').update({ archived_at: null }).eq('id', id), 'архив');
+export const autoArchive = async () => { try { await sb.rpc('auto_archive_my_team'); } catch { /* не критично */ } };
+
 export const deleteTask = async (id) => check(await sb.from('tasks').delete().eq('id', id), 'удаление задачи');
 
 export const loadSubtasks = async (taskId) =>

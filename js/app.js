@@ -10,6 +10,7 @@ import * as goals from './views/goals.js';
 import * as summary from './views/summary.js';
 import * as team from './views/team.js';
 import * as settings from './views/settings.js';
+import * as archive from './views/archive.js';
 import { timerButton, initTimer } from './timer.js';
 
 const PRODUCT = 'Ритм';
@@ -20,6 +21,7 @@ const VIEWS = {
   'team-tasks': { view: teamtasks, title: 'Командные', icon: 'users' },
   goals: { view: goals, title: 'Цели', icon: 'target' },
   summary: { view: summary, title: 'Итоги', icon: 'chart' },
+  archive: { view: archive, title: 'Архив', icon: 'archive' },
   team: { view: team, title: 'Команда', icon: 'team' },
   settings: { view: settings, title: 'Настройки', icon: 'settings' },
 };
@@ -120,6 +122,7 @@ function renderShell() {
             <div class="menu-who">${avatar(me, 36)}<div><b>${esc(fullName(me))}</b><span class="muted small">${esc(me.position || '')}</span></div></div>
             <a href="#/settings" class="menu-item">${icon('settings', 17)} Настройки</a>
             <a href="#/team" class="menu-item">${icon('team', 17)} Команда</a>
+            <a href="#/archive" class="menu-item">${icon('archive', 17)} Архив</a>
             <button class="menu-item" data-act="toggleTheme">${icon(document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun', 17)} Сменить тему</button>
             <button class="menu-item" data-act="signOut">${icon('logout', 17)} Выйти</button>
           </div>
@@ -497,7 +500,7 @@ async function startApp() {
   state.route = r.route;
   try { const b = JSON.parse(localStorage.getItem('tracker-board') || 'null'); if (b) Object.assign(state.board, b); } catch { /* ignore */ }
   renderShell();
-  await api.checkDeadlines();
+  await Promise.all([api.checkDeadlines(), api.autoArchive()]);
   await hooks.refresh();
   startLive();
   initTimer();

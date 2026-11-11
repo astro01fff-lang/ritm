@@ -12,7 +12,7 @@ import { moveTask, completeTask, reopenTask } from '../task.js';
 
 // ---------------------------------------------------------------- фильтры
 
-export function filterTasks(tasks, f = state.filters) {
+export function filterTasks(tasks, f = state.filters, { archived = false } = {}) {
   const norm = (x) => String(x).toLowerCase().replace(/ё/g, 'е');
   const q = norm(f.q.trim());
   let range = null;
@@ -21,6 +21,7 @@ export function filterTasks(tasks, f = state.filters) {
   if (f.period === 'week') { const s = startOfWeek(t0); range = [toISO(s), toISO(addDays(s, 6))]; }
   if (f.period === 'month') range = [toISO(startOfMonth(t0)), toISO(endOfMonth(t0))];
   return tasks.filter((t) => {
+    if (!archived && t.archived_at) return false;
     if (q) {
       const hay = norm(`${t.title} ${t.description} ${catById(t.category_id)?.name || ''} ${deptById(t.department_id)?.name || ''}`);
       if (!hay.includes(q)) return false;
@@ -190,7 +191,10 @@ export function render() {
         <h1>Доска</h1>
         <p class="muted">${total ? `${tasks.length} ${tasks.length === total ? '' : `из ${total} `}задач на доске` : 'Здесь будут задачи всей команды'}</p>
       </div>
-      <button class="btn btn-primary" data-act="newTask">${icon('plus', 18)} Задача</button>
+      <div class="head-actions">
+        <a class="btn btn-ghost" href="#/archive">${icon('archive', 17)} Архив${archivedCount() ? ` <span class="muted">${archivedCount()}</span>` : ''}</a>
+        <button class="btn btn-primary" data-act="newTask">${icon('plus', 18)} Задача</button>
+      </div>
     </div>
     <div class="group-bar">
       <span class="muted small">Колонки:</span>
@@ -216,6 +220,7 @@ export function render() {
           <header class="col-head">
             ${l.color ? `<span class="lane-dot" style="--c:${esc(l.color)}"></span>` : ''}
             <h2>${esc(l.name)}</h2><span class="count">${list.length}</span>
+            ${l.done && list.some((t) => t.completed_at && canEdit(t)) ? `<button class="icon-btn icon-btn-sm" data-act="archiveColumn" data-id="${l.id}" title="Отправить выполненные в архив" aria-label="Отправить выполненные в архив">${icon('archive', 16)}</button>` : ''}
             ${(g === 'status' ? lead : l.editable) ? `<button class="icon-btn icon-btn-sm" data-act="${g === 'status' ? 'columnMenu' : 'laneMenu'}" data-id="${l.id}" aria-label="Настроить колонку">${icon('more', 16)}</button>` : ''}
           </header>
           <div class="col-list" data-col-list="${l.id}">
@@ -232,6 +237,24 @@ export function render() {
 function saveBoardPrefs() {
   try { localStorage.setItem('tracker-board', JSON.stringify(state.board)); } catch { /* ignore */ }
 }
+const archivedCount = () => state.tasks.filter((t) => t.archived_at).length;
+
+actions.archiveColumn = async (el) => {
+  const list = filterTasks(state.tasks).filter((t) => t.column_id === el.dataset.id && t.completed_at && canEdit(t));
+  if (!list.length) return;
+  const ok = await confirmDialog({
+    title: `Отправить в архив ${list.length} ${list.length === 1 ? 'задачу' : list.length < 5 ? 'задачи' : 'задач'}?`,
+    text: 'Они исчезнут с доски, но останутся в разделе «Архив» и в итогах. Вернуть можно в любой момент.',
+    ok: 'В архив', danger: false,
+  });
+  if (!ok) return;
+  const now = new Date().toISOString();
+  list.forEach((t) => { t.archived_at = now; });
+  hooks.render();
+  try { await api.archiveTasks(list.map((t) => t.id)); toast('Отправлено в архив', 'ok'); }
+  catch (e) { toast(e.message, 'error'); hooks.refresh(); }
+};
+
 actions.quickDone = (el) => { const t = taskById(el.dataset.id); if (t) completeTask(t); };
 actions.quickReopen = (el) => { const t = taskById(el.dataset.id); if (t) reopenTask(t); };
 

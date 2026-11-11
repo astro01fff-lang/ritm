@@ -18,7 +18,7 @@ export function render() {
   const free = visible.filter((t) => t.kind === 'team' && !t.assignee_id && !t.completed_at && !t.group_id);
   const team = visible.filter((t) => t.kind === 'team' && t.assignee_id && !t.group_id);
   const openTeam = team.filter((t) => !t.completed_at);
-  const doneTeam = team.filter((t) => t.completed_at);
+  const doneTeam = team.filter((t) => t.completed_at && !t.archived_at);
 
   const nothing = !groupList.length && !free.length && !team.length;
   return `

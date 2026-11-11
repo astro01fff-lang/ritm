@@ -415,6 +415,8 @@ export function renderDrawer() {
         </select>
         <div class="drawer-head-actions">
           ${!t.completed_at && t.assignee_id === state.me.id ? `<button class="btn btn-ghost btn-sm" data-act="focusOnTask" data-id="${t.id}" title="Запустить таймер концентрации на эту задачу">${icon('clock', 16)} Фокус</button>` : ''}
+          ${editable && t.completed_at && !t.archived_at ? `<button class="btn btn-ghost btn-sm" data-act="archiveOpen" title="Убрать с доски в архив">${icon('archive', 16)} В архив</button>` : ''}
+          ${t.archived_at ? `<span class="archived-badge">${icon('archive', 14)} В архиве</span>` : ''}
           ${editable ? (t.completed_at
             ? `<button class="btn btn-ghost btn-sm" data-act="reopenOpen">Вернуть в работу</button>`
             : `<button class="btn btn-primary btn-sm" data-act="completeOpen">${icon('check', 16)} Выполнено</button>`) : ''}
@@ -712,6 +714,13 @@ actions.newTask = (el) => openCreateTask({
 });
 actions.completeOpen = () => { const t = taskById(state.openTaskId); if (t) completeTask(t); };
 actions.reopenOpen = () => { const t = taskById(state.openTaskId); if (t) reopenTask(t); };
+actions.archiveOpen = async () => {
+  const t = taskById(state.openTaskId); if (!t) return;
+  t.archived_at = new Date().toISOString();
+  hooks.render();
+  try { await api.archiveTasks([t.id]); toast('Задача в архиве', 'ok'); closeTask(); }
+  catch (e) { toast(e.message, 'error'); hooks.refresh(); }
+};
 actions.editTime = () => {
   const t = taskById(state.openTaskId);
   if (t) askTime(t, { title: 'Сколько времени ушло на задачу?', skipLabel: 'Отмена' });

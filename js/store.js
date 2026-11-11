@@ -74,6 +74,7 @@ export const canReassign = (t) => !!t && (leadOver(t) || t.author_id === state.m
 export const doneColumn = () => state.columns.find((c) => c.is_done) || state.columns[state.columns.length - 1];
 export const firstColumn = () => state.columns.find((c) => !c.is_done) || state.columns[0];
 export const isDone = (t) => !!t.completed_at;
+export const isArchived = (t) => !!t.archived_at;
 
 export function isOverdue(t) {
   if (!t.deadline || t.completed_at) return false;
