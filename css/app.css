@@ -988,3 +988,11 @@ button.ref-chip:hover { border-color: var(--c); }
   .tt-hide-sm { display: none; }
   .pf-hours { align-items: flex-start; text-align: left; }
 }
+
+/* цели: свёрнутые общие задачи */
+.gt-group { font-size: 12.5px; color: var(--text2); white-space: nowrap; }
+.gt-avatars { display: inline-flex; align-items: center; }
+.gt-avatars .avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--card); }
+.gt-avatars .avatar:first-child { margin-left: 0; }
+.gt-more { font-size: 11.5px; color: var(--text2); margin-left: 4px; }
+.gt-toggle { align-self: flex-start; margin: -4px 0 0 6px; }

@@ -34,18 +34,56 @@ function goalCard(g) {
           <span class="muted small">${p.total ? `${p.done} из ${p.total} ${plural(p.total, 'задачи', 'задач', 'задач')} выполнено` : 'Привяжите задачи, чтобы считать прогресс'}</span>
         </div>
       </div>
-      ${tasks.length ? `<ul class="goal-tasks">
-        ${tasks.slice(0, 8).map((t) => `<li data-act="openTask" data-id="${t.id}" class="${t.completed_at ? 'done' : ''}" tabindex="0">
-          <span class="gt-check">${t.completed_at ? icon('check', 13) : ''}</span>
-          <span class="gt-title">${esc(t.title)}</span>
-          ${avatar(memberById(t.assignee_id), 20)}
-        </li>`).join('')}
-        ${tasks.length > 8 ? `<li class="muted small">и ещё ${tasks.length - 8}</li>` : ''}
-      </ul>` : ''}
+      ${goalTaskList(g, tasks)}
       ${hidden > 0 ? `<p class="muted small">Ещё ${hidden} ${plural(hidden, 'задача', 'задачи', 'задач')} в личных планах коллег</p>` : ''}
       ${editable ? `<button class="btn btn-ghost btn-sm" data-act="goalLink" data-id="${g.id}">${icon('link', 16)} Привязать задачи</button>` : ''}
     </article>`;
 }
+
+const expanded = new Set();
+
+// Строки задач цели: копии одной задачи, поставленной нескольким людям, сворачиваем в одну строку
+function goalTaskList(g, tasks) {
+  if (!tasks.length) return '';
+  const rows = [];
+  const seen = new Set();
+  for (const t of tasks) {
+    if (!t.group_id) { rows.push({ t, copies: [t] }); continue; }
+    if (seen.has(t.group_id)) continue;
+    seen.add(t.group_id);
+    const copies = tasks.filter((x) => x.group_id === t.group_id);
+    const mine = copies.find((x) => x.assignee_id === state.me.id);
+    rows.push({ t: mine || copies[0], copies });
+  }
+  const open = expanded.has(g.id);
+  const shown = open ? rows : rows.slice(0, 8);
+  return `
+    <ul class="goal-tasks">
+      ${shown.map(({ t, copies }) => {
+        if (copies.length === 1) {
+          return `<li data-act="openTask" data-id="${t.id}" class="${t.completed_at ? 'done' : ''}" tabindex="0">
+            <span class="gt-check">${t.completed_at ? icon('check', 13) : ''}</span>
+            <span class="gt-title">${esc(t.title)}</span>
+            ${avatar(memberById(t.assignee_id), 20)}
+          </li>`;
+        }
+        const done = copies.filter((x) => x.completed_at).length;
+        const all = done === copies.length;
+        return `<li data-act="openTask" data-id="${t.id}" class="${all ? 'done' : ''}" tabindex="0" title="Поставлена ${copies.length} людям">
+          <span class="gt-check">${all ? icon('check', 13) : ''}</span>
+          <span class="gt-title">${esc(t.title)}</span>
+          <span class="gt-group">${done} из ${copies.length}</span>
+          <span class="gt-avatars">${copies.slice(0, 3).map((x) => avatar(memberById(x.assignee_id), 20)).join('')}${copies.length > 3 ? `<span class="gt-more">+${copies.length - 3}</span>` : ''}</span>
+        </li>`;
+      }).join('')}
+    </ul>
+    ${rows.length > 8 ? `<button class="link-btn small gt-toggle" data-act="goalExpand" data-id="${g.id}">${open ? 'Свернуть' : `Показать ещё ${rows.length - 8}`}</button>` : ''}`;
+}
+
+actions.goalExpand = (el) => {
+  if (expanded.has(el.dataset.id)) expanded.delete(el.dataset.id); else expanded.add(el.dataset.id);
+  hooks.render();
+};
 
 function periodTypeOf(g) {
   const [ms, me] = periodRange('month', g.period_start);
@@ -171,7 +209,18 @@ actions.goalMenu = (el) => {
 actions.goalLink = (el) => {
   const g = goalById(el.dataset.id); if (!g) return;
   const editable = state.tasks.filter((t) => seesAll() || t.assignee_id === state.me.id || t.author_id === state.me.id || t.kind === 'team');
-  const list = editable.sort((a, b) => (b.goal_id === g.id) - (a.goal_id === g.id) || (!!a.completed_at - !!b.completed_at));
+  // копии общей задачи показываем одной строкой; галочка привязывает все копии
+  const items = [];
+  const seenGroups = new Set();
+  for (const t of editable) {
+    if (!t.group_id) { items.push({ key: t.id, ids: [t.id], t, n: 1 }); continue; }
+    if (seenGroups.has(t.group_id)) continue;
+    seenGroups.add(t.group_id);
+    const copies = editable.filter((x) => x.group_id === t.group_id);
+    items.push({ key: 'g:' + t.group_id, ids: copies.map((x) => x.id), t: copies[0], n: copies.length });
+  }
+  const linked = (it) => it.ids.every((id) => state.tasks.find((x) => x.id === id)?.goal_id === g.id);
+  const list = items.sort((a, b) => linked(b) - linked(a) || (!!a.t.completed_at - !!b.t.completed_at));
   const m = openModal(`
     <form>
       <div class="modal-head"><h3 class="modal-title">Задачи цели</h3>
@@ -179,11 +228,11 @@ actions.goalLink = (el) => {
       <p class="muted">${esc(g.title)}</p>
       <label class="search">${icon('search', 16)}<input type="search" placeholder="Найти задачу" data-link-q></label>
       <ul class="link-list">
-        ${list.map((t) => `<li data-title="${esc(t.title.toLowerCase())}">
+        ${list.map((it) => { const t = it.t; return `<li data-title="${esc(t.title.toLowerCase())}">
           <label class="check-row">
-            <input type="checkbox" value="${t.id}" ${t.goal_id === g.id ? 'checked' : ''}>
-            <span>${esc(t.title)}<br><small class="muted">${esc(shortName(memberById(t.assignee_id)))} · ${esc(columnById(t.column_id)?.name || '')}${t.goal_id && t.goal_id !== g.id ? ' · привязана к другой цели' : ''}</small></span>
-          </label></li>`).join('') || '<li class="muted">Нет задач, которые вы можете изменить</li>'}
+            <input type="checkbox" value="${esc(it.key)}" data-ids="${it.ids.join(',')}" ${linked(it) ? 'checked' : ''}>
+            <span>${esc(t.title)}<br><small class="muted">${it.n > 1 ? `поставлена ${it.n} людям` : `${esc(shortName(memberById(t.assignee_id)))} · ${esc(columnById(t.column_id)?.name || '')}`}${t.goal_id && t.goal_id !== g.id ? ' · привязана к другой цели' : ''}</small></span>
+          </label></li>`; }).join('') || '<li class="muted">Нет задач, которые вы можете изменить</li>'}
       </ul>
       <div class="modal-actions"><button type="button" class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-primary">Сохранить</button></div>
     </form>`, { wide: true });
@@ -194,12 +243,13 @@ actions.goalLink = (el) => {
   });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const changes = $$('input[type=checkbox]', form).map((c) => {
-      const t = state.tasks.find((x) => x.id === c.value);
+    const changes = $$('input[type=checkbox]', form).flatMap((c) => c.dataset.ids.split(',').map((id) => {
+      const t = state.tasks.find((x) => x.id === id);
+      if (!t) return null;
       if (c.checked && t.goal_id !== g.id) return [t.id, g.id];
       if (!c.checked && t.goal_id === g.id) return [t.id, null];
       return null;
-    }).filter(Boolean);
+    })).filter(Boolean);
     try {
       for (const [id, goal] of changes) await api.updateTask(id, { goal_id: goal });
       m.close(); if (changes.length) toast('Задачи обновлены', 'ok'); hooks.refresh();
