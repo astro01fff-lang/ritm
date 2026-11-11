@@ -39,18 +39,30 @@ export const columnById = (id) => state.columns.find((c) => c.id === id) || null
 export const taskById = (id) => state.tasks.find((t) => t.id === id) || null;
 export const goalById = (id) => state.goals.find((g) => g.id === id) || null;
 export const deptById = (id) => state.departments.find((d) => d.id === id) || null;
+export const myDepartments = () => state.departments.filter((d) => d.owner_id === state.me?.id);
+// Отделы, подходящие для задачи: отделы исполнителя (если они мне видны), иначе мои
+export function departmentsFor(assigneeId) {
+  const theirs = assigneeId ? state.departments.filter((d) => d.owner_id === assigneeId) : [];
+  return theirs.length ? theirs : myDepartments();
+}
+export const deptKey = (name) => String(name || '').trim().toLowerCase();
 export const catById = (id) => state.categories.find((c) => c.id === id) || null;
 export const activeMembers = () => state.members.filter((m) => m.active);
 
+// Управление командой (люди, ссылки, справочники, общие цели): администратор и руководитель
 export const isLead = () => state.me?.role === 'admin' || state.me?.role === 'manager';
-export const isAdmin = () => state.me?.role === 'admin';
+export const isAdmin = isLead;
+// Видеть личные задачи и итоги всех — только руководитель
+export const seesAll = () => state.me?.role === 'manager';
 // Чьи личные задачи от меня скрыты (настройка «Задачи видит только он сам»)
 export const hiddenFromMe = (userId) => {
+  if (!userId || userId === state.me?.id) return false;
+  if (!seesAll()) return true;
   const p = state.members.find((m) => m.id === userId);
-  return !!p && p.private_tasks && userId !== state.me?.id;
+  return !!p && p.private_tasks;
 };
 
-const leadOver = (t) => isLead() && !hiddenFromMe(t.assignee_id);
+const leadOver = (t) => seesAll() && !hiddenFromMe(t.assignee_id);
 export function canEdit(t) {
   if (!t || !state.me) return false;
   const me = state.me.id;

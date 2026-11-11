@@ -1,6 +1,6 @@
 // Цели команды и личные цели. Прогресс считается автоматически по привязанным задачам.
 import * as api from '../api.js';
-import { state, actions, hooks, memberById, goalById, isLead, columnById } from '../store.js';
+import { state, actions, hooks, memberById, goalById, isLead, columnById, seesAll } from '../store.js';
 import {
   esc, $, $$, icon, avatar, fullName, shortName, openModal, confirmDialog, toast, todayISO, periodRange, fmtPeriod,
   plural, PERIOD_LABELS,
@@ -14,7 +14,7 @@ function progressOf(g) {
 function goalCard(g) {
   const p = progressOf(g);
   const tasks = state.tasks.filter((t) => t.goal_id === g.id);
-  const editable = isLead() || g.owner_id === state.me.id;
+  const editable = g.owner_id === state.me.id || (!g.owner_id && isLead()) || seesAll();
   const hidden = p.total - tasks.length;
   const owner = g.owner_id ? memberById(g.owner_id) : null;
   return `
@@ -61,7 +61,7 @@ export function render() {
   const today = todayISO();
   const team = state.goals.filter((g) => !g.owner_id);
   const mine = state.goals.filter((g) => g.owner_id === state.me.id);
-  const others = isLead() ? state.goals.filter((g) => g.owner_id && g.owner_id !== state.me.id) : [];
+  const others = seesAll() ? state.goals.filter((g) => g.owner_id && g.owner_id !== state.me.id) : [];
   const sortGoals = (list) => list.sort((a, b) => (a.period_end < today) - (b.period_end < today) || a.period_end.localeCompare(b.period_end));
   const section = (title, list, emptyText, kind) => `
     <h2 class="list-h">${title} <span>${list.length}</span></h2>
@@ -170,7 +170,7 @@ actions.goalMenu = (el) => {
 
 actions.goalLink = (el) => {
   const g = goalById(el.dataset.id); if (!g) return;
-  const editable = state.tasks.filter((t) => isLead() || t.assignee_id === state.me.id || t.author_id === state.me.id);
+  const editable = state.tasks.filter((t) => seesAll() || t.assignee_id === state.me.id || t.author_id === state.me.id || t.kind === 'team');
   const list = editable.sort((a, b) => (b.goal_id === g.id) - (a.goal_id === g.id) || (!!a.completed_at - !!b.completed_at));
   const m = openModal(`
     <form>

@@ -1,5 +1,5 @@
 // «Итоги»: что сделано за период, сколько времени ушло, прогресс целей. Экспорт в CSV.
-import { state, actions, inputs, hooks, memberById, columnById, deptById, catById, isLead, activeMembers, isOverdue, hiddenFromMe } from '../store.js';
+import { state, actions, inputs, hooks, memberById, columnById, deptById, catById, isLead, activeMembers, isOverdue, hiddenFromMe, seesAll, deptKey } from '../store.js';
 import {
   esc, icon, avatar, fullName, today, toISO, addDays, parseISO, startOfWeek, startOfMonth, endOfMonth,
   startOfQuarter, endOfQuarter, overlaps, fmtPeriod, fmtShort, fmtMinutes, fmtHours, plural, downloadCSV,
@@ -23,7 +23,7 @@ const completedDay = (t) => (t.completed_at ? toISO(new Date(t.completed_at)) : 
 
 function compute([s, e]) {
   const todayStr = toISO(today());
-  const people = isLead() ? activeMembers() : activeMembers().filter((m) => m.id === state.me.id);
+  const people = seesAll() ? activeMembers() : activeMembers().filter((m) => m.id === state.me.id);
   const doneIn = (t) => { const d = completedDay(t); return d && d >= s && d <= e; };
   const openRelevant = (t) => !t.completed_at && (inRange(t, [s, e]) || (t.deadline && t.deadline <= e));
   const overdueAt = (t) => !t.completed_at && t.deadline && t.deadline < todayStr && t.deadline <= e;
@@ -39,7 +39,7 @@ function compute([s, e]) {
     return { p, done, open, overdue, minutes, unlogged, goals, total: done.length + open.length };
   });
 
-  const scopeTasks = isLead() ? state.tasks : state.tasks.filter((t) => t.assignee_id === state.me.id);
+  const scopeTasks = seesAll() ? state.tasks.filter((t) => !hiddenFromMe(t.assignee_id)) : state.tasks.filter((t) => t.assignee_id === state.me.id);
   const done = scopeTasks.filter(doneIn);
   const minutes = done.reduce((a, t) => a + (t.spent_minutes || 0), 0);
   const inWork = scopeTasks.filter((t) => !t.completed_at && inRange(t, [s, e]));
@@ -87,7 +87,17 @@ function compute([s, e]) {
       return { ...k, done: d.length, open: o.length, minutes: d.reduce((a, t) => a + (t.spent_minutes || 0), 0) };
     }).filter((x) => x.done || x.open);
   };
-  const byDept = breakdown(state.departments, 'department_id', 'Без отдела');
+  const byDept = (() => {
+    const map = new Map();
+    for (const t of [...done, ...scopeTasks.filter((x) => !x.completed_at && inRange(x, [s, e]))]) {
+      const d = deptById(t.department_id);
+      const k = d ? deptKey(d.name) : '';
+      if (!map.has(k)) map.set(k, { id: k, name: d ? d.name : 'Без отдела', color: d ? d.color : null, done: 0, open: 0, minutes: 0 });
+      const row = map.get(k);
+      if (t.completed_at && done.includes(t)) { row.done++; row.minutes += t.spent_minutes || 0; } else row.open++;
+    }
+    return [...map.values()].sort((a, b) => (a.id === '') - (b.id === '') || b.done - a.done);
+  })();
   const byCat = breakdown(state.categories, 'category_id', 'Без категории');
   return { rows, done, minutes, inWork, overdue, avgDays, buckets, byWeek, teamGoals, groupList, byDept, byCat };
 }
@@ -136,7 +146,7 @@ export function render() {
   const r = range();
   const { scope, offset } = state.summary;
   const d = compute(r);
-  const lead = isLead();
+  const lead = seesAll();
   const title = scope === 'custom' ? fmtPeriod('custom', r[0], r[1]) : fmtPeriod(scope, r[0], r[1]);
 
   return `

@@ -159,7 +159,7 @@ document.addEventListener('submit', async (e) => {
     await api.createTasks({
       team_id: state.team.id, author_id: state.me.id, kind: 'personal', title, description: '',
       period_type: f.ptype.value, period_start: f.ps.value, period_end: f.pe.value,
-      priority: 'medium', column_id: col.id, position: pos, category: '', deadline: null, goal_id: null,
+      priority: 'medium', column_id: col.id, position: pos, category_id: null, department_id: null, deadline: null, goal_id: null,
     }, [state.me.id]);
     toast('Задача добавлена', 'ok');
     await hooks.refresh();

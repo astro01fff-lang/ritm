@@ -1,6 +1,6 @@
 // «Команда»: участники, роли, персональные ссылки входа, демоданные.
 import * as api from '../api.js';
-import { state, actions, inputs, hooks, memberById, isAdmin, isLead } from '../store.js';
+import { state, actions, inputs, hooks, memberById, isAdmin, isLead, myDepartments, seesAll } from '../store.js';
 import { openRefEditor } from './board.js';
 import {
   esc, $, icon, avatar, fullName, openModal, confirmDialog, toast, copyText, timeAgo, ROLE_LABELS,
@@ -36,7 +36,7 @@ export function render() {
               ${Object.entries(ROLE_LABELS).map(([k, l]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
             <div class="member-actions">
-              ${!m.private_tasks && m.role !== 'member' ? `<button class="btn btn-ghost btn-sm" data-act="makePrivate" data-id="${m.id}" title="Личные задачи этого человека не увидит никто, кроме него">${icon('lock', 15)} Скрыть задачи</button>` : ''}
+              ${!m.private_tasks && m.role === 'manager' ? `<button class="btn btn-ghost btn-sm" data-act="makePrivate" data-id="${m.id}" title="Личные задачи этого человека не увидит никто, кроме него">${icon('lock', 15)} Скрыть задачи</button>` : ''}
               <button class="btn btn-ghost btn-sm" data-act="newLink" data-id="${m.id}" title="Новая ссылка сбрасывает пароль">${icon('link', 15)} ${m.active ? 'Новая ссылка / сброс пароля' : 'Вернуть доступ'}</button>
               ${m.id !== state.me.id && m.active ? `<button class="btn btn-ghost btn-sm" data-act="revoke" data-id="${m.id}">Отозвать доступ</button>` : ''}
               ${m.id !== state.me.id ? `<button class="icon-btn" data-act="removeMember" data-id="${m.id}" aria-label="Удалить из команды" title="Удалить из команды">${icon('trash', 16)}</button>` : ''}
@@ -44,16 +44,16 @@ export function render() {
         </li>`).join('')}
     </ul>
 
-    ${refPanel('department', 'Отделы', state.departments, 'Отделы, с которыми работает команда. На доске их можно сделать колонками.')}
+    ${refPanel('department', 'Мои отделы', myDepartments(), 'Отделы, с которыми работаете вы. У каждого участника свой список, его видите только вы и руководитель. На доске отделы можно сделать колонками.')}
     ${refPanel('category', 'Категории задач', state.categories, 'По категориям удобно фильтровать задачи и собирать квартальные итоги.')}
 
     <section class="panel roles-help">
       <h2 class="panel-h">Кто что видит</h2>
       <dl>
-        <dt>Администратор</dt><dd>Всё, что руководитель, плюс участники, роли, ссылки входа и настройки команды.</dd>
-        <dt>Руководитель</dt><dd>Видит все задачи и итоги, ставит задачи любому или всем сразу, создаёт цели команды.</dd>
-        <dt>Участник</dt><dd>Свои задачи и командные. Личные задачи коллег не видит. Видит только свои итоги.</dd>
-        <dt>${icon('lock', 14)} Задачи скрыты</dt><dd>Личные задачи этого человека не видит никто, даже администраторы. Подходит для руководителя. Командные задачи и задачи, которые вы ему поставили, остаются видны. Отключить скрытие может только он сам в своих настройках.</dd>
+        <dt>Руководитель</dt><dd>Видит личные задачи и итоги всех сотрудников. Управляет командой: участники, роли, ссылки, колонки, категории, общие цели.</dd>
+        <dt>Администратор</dt><dd>Управляет командой так же, как руководитель, но видит только свои и командные задачи. Чужие личные задачи не видит.</dd>
+        <dt>Участник</dt><dd>Свои задачи и командные. Командную задачу может поставить любому коллеге или всем. Личные задачи коллег не видит.</dd>
+        <dt>${icon('lock', 14)} Задачи скрыты</dt><dd>Личные задачи этого человека не видят даже руководители. Командные задачи и задачи, которые вы ему поставили, остаются видны. Отключить скрытие может только он сам в своих настройках.</dd>
       </dl>
     </section>
 
@@ -71,7 +71,7 @@ export function render() {
 }
 
 function refPanel(kind, title, list, hint) {
-  const lead = isLead();
+  const lead = kind === 'department' || isLead();
   const count = (id) => state.tasks.filter((t) => t[kind === 'department' ? 'department_id' : 'category_id'] === id && !t.completed_at).length;
   return `
     <section class="panel">

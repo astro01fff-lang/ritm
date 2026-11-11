@@ -3,6 +3,7 @@ import * as api from './api.js';
 import {
   state, actions, inputs, hooks, memberById, columnById, taskById, goalById, activeMembers, isLead,
   canEdit, canDelete, canReassign, doneColumn, firstColumn, isOverdue, groupCopies, deptById, catById, highFivesFor,
+  myDepartments, departmentsFor,
 } from './store.js';
 import {
   esc, $, $$, icon, avatar, fullName, shortName, openModal, confirmDialog, toast, debounce,
@@ -159,11 +160,11 @@ export function openCreateTask(preset = {}) {
           <label><input type="radio" name="kind" value="team" ${kind === 'team' ? 'checked' : ''}><span>Командная</span></label>
         </div>
 
-        <label class="fl">${lead ? 'Исполнители' : 'Исполнитель'}</label>
+        <label class="fl">Исполнители</label>
         <div class="assignee-pick">
-          ${lead ? `<button type="button" class="chip chip-all" data-pick-all>Все</button>` : ''}
-          ${(lead ? members : members.filter((x) => x.id === me.id)).map((x) => `
-            <label class="chip pick ${selected.has(x.id) ? 'on' : ''}">
+          <button type="button" class="chip chip-all" data-pick-all>Все</button>
+          ${members.map((x) => `
+            <label class="chip pick ${selected.has(x.id) ? 'on' : ''}" ${x.id !== me.id ? 'data-other' : ''}>
               <input type="checkbox" name="assignee" value="${x.id}" ${selected.has(x.id) ? 'checked' : ''}>
               ${avatar(x, 20)}<span>${x.id === me.id ? 'Я' : esc(shortName(x))}</span>
             </label>`).join('')}
@@ -194,8 +195,8 @@ export function openCreateTask(preset = {}) {
 
         <label class="fl" for="f-dep">Отдел</label>
         <select id="f-dep" name="department_id">
-          <option value="">${state.departments.length ? 'Без отдела' : 'Отделов пока нет'}</option>
-          ${state.departments.map((x) => `<option value="${x.id}" ${x.id === preset.department_id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}
+          <option value="">${myDepartments().length ? 'Без отдела' : 'Своих отделов пока нет'}</option>
+          ${myDepartments().map((x) => `<option value="${x.id}" ${x.id === preset.department_id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}
         </select>
 
         <label class="fl" for="f-goal">Цель</label>
@@ -248,6 +249,14 @@ export function openCreateTask(preset = {}) {
   });
 
   const sync = () => {
+    const kindNow = $('[name=kind]:checked', form).value;
+    // личную задачу участник ставит только себе; командную — кому угодно
+    const othersAllowed = lead || kindNow === 'team';
+    $$('[data-other]', form).forEach((l) => {
+      l.hidden = !othersAllowed;
+      if (!othersAllowed) $('input', l).checked = false;
+    });
+    const allBtn = $('[data-pick-all]', form); if (allBtn) allBtn.hidden = !othersAllowed;
     const checked = $$('[name=assignee]:checked', form);
     $$('.pick', form).forEach((l) => l.classList.toggle('on', $('input', l).checked));
     const kindVal = $('[name=kind]:checked', form).value;
@@ -255,7 +264,7 @@ export function openCreateTask(preset = {}) {
     const hint = $('.assignee-hint', form);
     if (n > 1) hint.textContent = `У каждого появится своя копия задачи со своим статусом и временем (${n} шт.)`;
     else if (n === 0) hint.textContent = kindVal === 'team' ? 'Без исполнителя — задачу сможет взять любой участник' : 'Выберите исполнителя или сделайте задачу командной';
-    else hint.textContent = '';
+    else hint.textContent = !lead && kindVal === 'personal' ? 'Личную задачу можно поставить только себе. Чтобы поставить коллеге, выберите «Командная»' : '';
     $('[data-submit]', form).textContent = n > 1 ? `Создать ${n} задачи` : 'Создать задачу';
   };
   form.addEventListener('change', (e) => {
@@ -458,7 +467,8 @@ export function renderDrawer() {
           <dt>Отдел</dt>
           <dd><select data-field="department_id" data-focus-key="department" ${dis}>
             <option value="">Без отдела</option>
-            ${state.departments.map((d) => `<option value="${d.id}" ${d.id === t.department_id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+            ${departmentsFor(t.assignee_id).map((d) => `<option value="${d.id}" ${d.id === t.department_id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+            ${t.department_id && !departmentsFor(t.assignee_id).some((d) => d.id === t.department_id) ? `<option value="${t.department_id}" selected>${esc(deptById(t.department_id)?.name || 'Отдел коллеги')}</option>` : ''}
           </select></dd>
 
           <dt>Цель</dt>

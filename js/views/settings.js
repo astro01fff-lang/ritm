@@ -50,7 +50,7 @@ export function render() {
 
     <section class="panel settings">
       <h2 class="panel-h">Видимость моих задач</h2>
-      <label class="switch-row"><span>Мои личные задачи вижу только я<br><small class="muted">Их не увидят ни коллеги, ни руководители, ни администраторы. Командные задачи и задачи, которые вам поставили другие, остаются видны их авторам.</small></span>
+      <label class="switch-row"><span>Мои личные задачи вижу только я<br><small class="muted">Их не увидят ни коллеги, ни руководители. Командные задачи и задачи, которые вам поставили другие, остаются видны их авторам.</small></span>
         <input type="checkbox" role="switch" data-on="privateTasks" ${me.private_tasks ? 'checked' : ''}><i class="switch"></i></label>
     </section>
 

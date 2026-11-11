@@ -2,7 +2,7 @@
 import * as api from '../api.js';
 import {
   state, actions, inputs, hooks, memberById, columnById, taskById, deptById, catById, activeMembers, isLead, canEdit,
-  isOverdue, groupCopies, highFivesFor,
+  isOverdue, groupCopies, highFivesFor, myDepartments, deptKey,
 } from '../store.js';
 import {
   esc, $, $$, icon, avatar, shortName, fmtDeadline, fmtMinutes, toast, confirmDialog, openModal,
@@ -13,7 +13,8 @@ import { moveTask, completeTask, reopenTask } from '../task.js';
 // ---------------------------------------------------------------- фильтры
 
 export function filterTasks(tasks, f = state.filters) {
-  const q = f.q.trim().toLowerCase();
+  const norm = (x) => String(x).toLowerCase().replace(/ё/g, 'е');
+  const q = norm(f.q.trim());
   let range = null;
   const t0 = today();
   if (f.period === 'today') range = [toISO(t0), toISO(t0)];
@@ -21,7 +22,7 @@ export function filterTasks(tasks, f = state.filters) {
   if (f.period === 'month') range = [toISO(startOfMonth(t0)), toISO(endOfMonth(t0))];
   return tasks.filter((t) => {
     if (q) {
-      const hay = `${t.title} ${t.description} ${catById(t.category_id)?.name || ''} ${deptById(t.department_id)?.name || ''}`.toLowerCase();
+      const hay = norm(`${t.title} ${t.description} ${catById(t.category_id)?.name || ''} ${deptById(t.department_id)?.name || ''}`);
       if (!hay.includes(q)) return false;
     }
     if (f.assignee === 'me' && t.assignee_id !== state.me.id) return false;
@@ -29,7 +30,7 @@ export function filterTasks(tasks, f = state.filters) {
     if (!['all', 'me', 'none'].includes(f.assignee) && t.assignee_id !== f.assignee) return false;
     if (f.priority !== 'all' && t.priority !== f.priority) return false;
     if (f.category === 'none' ? t.category_id : f.category !== 'all' && t.category_id !== f.category) return false;
-    if (f.department === 'none' ? t.department_id : f.department !== 'all' && t.department_id !== f.department) return false;
+    if (f.department === 'none' ? t.department_id : f.department !== 'all' && deptKey(deptById(t.department_id)?.name) !== f.department) return false;
     if (f.kind !== 'all' && t.kind !== f.kind) return false;
     if (f.overdue && !isOverdue(t)) return false;
     if (range) {
@@ -51,7 +52,7 @@ export function filterBar({ showAssignee = true } = {}) {
     <div class="filters">
       <label class="search">${icon('search', 16)}<input type="search" placeholder="Поиск по задачам" value="${esc(f.q)}" data-on="filterQ" data-focus-key="filterQ" aria-label="Поиск"></label>
       ${state.departments.length ? `<select data-on="filter" data-key="department" aria-label="Отдел">
-        ${opt('all', 'Все отделы', f.department)}${state.departments.map((d) => opt(d.id, d.name, f.department)).join('')}${opt('none', 'Без отдела', f.department)}
+        ${opt('all', 'Все отделы', f.department)}${deptNames().map((d) => opt(d.key, d.name, f.department)).join('')}${opt('none', 'Без отдела', f.department)}
       </select>` : ''}
       <select data-on="filter" data-key="category" aria-label="Категория">
         ${opt('all', 'Все категории', f.category)}${state.categories.map((c) => opt(c.id, c.name, f.category)).join('')}${opt('none', 'Без категории', f.category)}
@@ -78,6 +79,17 @@ inputs.filterQ = (el) => { state.filters.q = el.value; hooks.render(); };
 inputs.filter = (el) => { state.filters[el.dataset.key] = el.value; hooks.render(); };
 inputs.filterOverdue = (el) => { state.filters.overdue = el.checked; hooks.render(); };
 actions.resetFilters = () => { state.filters = { ...DEFAULT_FILTERS }; hooks.render(); };
+
+// Уникальные названия отделов: у каждого свои отделы, а у разных людей названия могут совпадать
+export function deptNames() {
+  const mine = myDepartments();
+  const seen = new Map();
+  for (const d of [...mine, ...state.departments.filter((x) => !mine.includes(x))]) {
+    const k = deptKey(d.name);
+    if (!seen.has(k)) seen.set(k, { key: k, name: d.name, color: d.color, mine: d.owner_id === state.me.id });
+  }
+  return [...seen.values()];
+}
 
 // ---------------------------------------------------------------- метки
 
@@ -128,7 +140,7 @@ export function card(t, { compact = false, hide = '' } = {}) {
 
 const GROUPS = { status: 'Статусы', department: 'Отделы', category: 'Категории' };
 const REF = {
-  department: { table: 'departments', list: () => state.departments, field: 'department_id', one: 'отдел', none: 'Без отдела', add: 'Новый отдел' },
+  department: { table: 'departments', list: () => myDepartments(), field: 'department_id', one: 'отдел', none: 'Без отдела', add: 'Новый отдел' },
   category: { table: 'categories', list: () => state.categories, field: 'category_id', one: 'категорию', none: 'Без категории', add: 'Новая категория' },
 };
 
@@ -137,13 +149,22 @@ export function lanes(groupBy = state.board.groupBy) {
     return state.columns.map((c) => ({ id: c.id, name: c.name, done: c.is_done, field: 'column_id', value: c.id, editable: true }));
   }
   const r = REF[groupBy];
+  if (groupBy === 'department') {
+    return [
+      ...deptNames().map((d) => ({ id: 'd-' + d.key, key: d.key, name: d.name, color: d.color, field: 'department_id', byName: true, editable: d.mine })),
+      { id: 'none', name: r.none, field: r.field, value: null, none: true },
+    ];
+  }
   return [
-    ...r.list().map((x) => ({ id: x.id, name: x.name, color: x.color, field: r.field, value: x.id, editable: true })),
+    ...r.list().map((x) => ({ id: x.id, name: x.name, color: x.color, field: r.field, value: x.id, editable: isLead() })),
     { id: 'none', name: r.none, field: r.field, value: null, none: true },
   ];
 }
 
-const laneTasks = (lane, tasks) => tasks.filter((t) => (t[lane.field] || null) === lane.value).sort((a, b) => a.position - b.position);
+const inLane = (lane, t) => (lane.byName
+  ? deptKey(deptById(t.department_id)?.name) === lane.key && !!t.department_id
+  : (t[lane.field] || null) === lane.value);
+const laneTasks = (lane, tasks) => tasks.filter((t) => inLane(lane, t)).sort((a, b) => a.position - b.position);
 
 export function render() {
   const g = state.board.groupBy;
@@ -152,7 +173,17 @@ export function render() {
   if (g !== 'status' && state.board.hideDone) tasks = tasks.filter((t) => !t.completed_at);
   const lead = isLead();
   const total = state.tasks.length;
-  const ls = lanes(g).filter((l) => !(l.none && !laneTasks(l, tasks).length && g !== 'status'));
+  const active = filtersActive();
+  const ls = lanes(g).filter((l) => {
+    if (g === 'status') return true;
+    const n = laneTasks(l, tasks).length;
+    if (l.none && !n) return false;
+    // выбран конкретный отдел или категория — показываем только эту колонку
+    if (g === 'department' && state.filters.department !== 'all') return state.filters.department === 'none' ? l.none : l.key === state.filters.department;
+    if (g === 'category' && state.filters.category !== 'all') return state.filters.category === 'none' ? l.none : l.id === state.filters.category;
+    // при поиске и других фильтрах пустые колонки прячем
+    return !active || n > 0;
+  });
   return `
     <div class="view-head">
       <div>
@@ -170,18 +201,22 @@ export function render() {
     </div>
     ${filterBar()}
     ${!total ? emptyBoard() : ''}
-    ${g === 'department' && !state.departments.length ? `<div class="empty-inline">Отделов пока нет. ${lead ? 'Добавьте отделы, с которыми работает команда, — каждый станет колонкой.' : 'Их добавляет руководитель или администратор.'}
-      ${lead ? `<button class="btn btn-ghost btn-sm" data-act="addLane">${icon('plus', 16)} Добавить отдел</button>` : ''}</div>` : ''}
+    ${total && active ? `<p class="found ${tasks.length ? '' : 'found-none'}">${tasks.length
+      ? `Найдено: ${tasks.length}`
+      : `Ничего не найдено${state.filters.q ? ` по запросу «${esc(state.filters.q)}»` : ''}. Проверьте фильтры или`} <button class="link-btn" data-act="resetFilters">сбросить ${tasks.length ? 'фильтры' : 'их'}</button></p>` : ''}
+    ${g === 'department' && !myDepartments().length ? `<div class="empty-inline">У вас пока нет своих отделов. Добавьте отделы, с которыми работаете, — каждый станет колонкой. Их видите только вы${isLead() ? '' : ' и руководитель'}.
+      <button class="btn btn-ghost btn-sm" data-act="addLane">${icon('plus', 16)} Добавить отдел</button></div>` : ''}
     <div class="board" id="board">
       ${ls.map((l) => {
         const list = laneTasks(l, tasks);
-        const preset = g === 'status' ? `data-column="${l.id}"` : g === 'department' ? `data-department="${l.none ? '' : l.id}"` : `data-category="${l.none ? '' : l.id}"`;
+        const myDep = l.byName ? myDepartments().find((d) => deptKey(d.name) === l.key) : null;
+        const preset = g === 'status' ? `data-column="${l.id}"` : g === 'department' ? `data-department="${myDep ? myDep.id : ''}"` : `data-category="${l.none ? '' : l.id}"`;
         return `
         <section class="col ${l.done ? 'col-done' : ''} ${l.none ? 'col-none' : ''}" data-col="${l.id}">
           <header class="col-head">
             ${l.color ? `<span class="lane-dot" style="--c:${esc(l.color)}"></span>` : ''}
             <h2>${esc(l.name)}</h2><span class="count">${list.length}</span>
-            ${lead && l.editable ? `<button class="icon-btn icon-btn-sm" data-act="${g === 'status' ? 'columnMenu' : 'laneMenu'}" data-id="${l.id}" aria-label="Настроить колонку">${icon('more', 16)}</button>` : ''}
+            ${(g === 'status' ? lead : l.editable) ? `<button class="icon-btn icon-btn-sm" data-act="${g === 'status' ? 'columnMenu' : 'laneMenu'}" data-id="${l.id}" aria-label="Настроить колонку">${icon('more', 16)}</button>` : ''}
           </header>
           <div class="col-list" data-col-list="${l.id}">
             ${list.map((t) => card(t, { hide: g })).join('')}
@@ -190,7 +225,7 @@ export function render() {
           <button class="col-add" data-act="newTask" ${preset}>${icon('plus', 16)} Добавить задачу</button>
         </section>`;
       }).join('')}
-      ${lead ? `<button class="col col-new" data-act="${g === 'status' ? 'addColumn' : 'addLane'}">${icon('plus', 18)} ${g === 'status' ? 'Новая колонка' : REF[g].add}</button>` : ''}
+      ${(g === 'department' || lead) ? `<button class="col col-new" data-act="${g === 'status' ? 'addColumn' : 'addLane'}">${icon('plus', 18)} ${g === 'status' ? 'Новая колонка' : REF[g].add}</button>` : ''}
     </div>`;
 }
 
@@ -336,7 +371,7 @@ export function openRefEditor(kind, item) {
     }
     try {
       if (item) await api.updateRef(r.table, item.id, { name, color });
-      else await api.createRef(r.table, { team_id: state.team.id, name, color, position: (list.at(-1)?.position || 0) + 1000 });
+      else await api.createRef(r.table, { team_id: state.team.id, name, color, position: (list.at(-1)?.position || 0) + 1000, ...(kind === 'department' ? { owner_id: state.me.id } : {}) });
       m.close(); toast(item ? 'Сохранено' : 'Добавлено', 'ok'); hooks.refresh();
     } catch (ex) { $('.form-error', form).textContent = ex.message; }
   });
@@ -363,7 +398,9 @@ export function openRefEditor(kind, item) {
 actions.addLane = () => openRefEditor(state.board.groupBy === 'status' ? 'department' : state.board.groupBy);
 actions.laneMenu = (el) => {
   const kind = state.board.groupBy;
-  const item = REF[kind].list().find((x) => x.id === el.dataset.id);
+  const item = kind === 'department'
+    ? myDepartments().find((d) => 'd-' + deptKey(d.name) === el.dataset.id)
+    : REF[kind].list().find((x) => x.id === el.dataset.id);
   if (item) openRefEditor(kind, item);
 };
 
@@ -499,12 +536,20 @@ async function drop() {
   else if (prev) pos = prev.position + 1000;
   else if (next) pos = next.position - 1000;
   else pos = task.position;
-  const sameLane = (task[lane.field] || null) === lane.value;
+  const sameLane = inLane(lane, task);
   if (sameLane && Math.abs(task.position - pos) < 1e-9) return;
 
   if (lane.field === 'column_id') { await moveTask(task, lane.value, pos); return; }
   // отдел или категория
-  const patch = { [lane.field]: lane.value, position: pos };
+  let value = lane.value;
+  if (lane.byName) {
+    // берём отдел с этим названием у исполнителя, затем у автора, затем у себя
+    const owners = [task.assignee_id, task.author_id, state.me.id];
+    const dep = owners.map((o) => state.departments.find((d) => d.owner_id === o && deptKey(d.name) === lane.key)).find(Boolean);
+    if (!dep) { toast(`Добавьте себе отдел «${lane.name}», чтобы переносить в него задачи`, 'info'); hooks.render(); return; }
+    value = dep.id;
+  }
+  const patch = { [lane.field]: value, position: pos };
   Object.assign(task, patch);
   hooks.render();
   try {

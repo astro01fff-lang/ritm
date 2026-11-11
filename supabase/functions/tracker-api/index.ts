@@ -127,9 +127,12 @@ async function getCaller(req: Request) {
   return profile as { id: string; team_id: string; role: string };
 }
 
+// Управлять командой могут администратор и руководитель
+const canManage = (role: string) => role === "admin" || role === "manager";
+
 async function requireAdmin(req: Request) {
   const me = await getCaller(req);
-  if (me.role !== "admin") throw new HttpError(403, "Только для администратора");
+  if (!canManage(me.role)) throw new HttpError(403, "Только для администратора или руководителя");
   return me;
 }
 
@@ -230,10 +233,10 @@ async function setRole(req: Request, body: Record<string, unknown>) {
   const role = String(body.role);
   if (!ROLES.includes(role)) throw new HttpError(400, "Неизвестная роль");
   const target = await memberOfTeam(String(body.userId), me.team_id);
-  if (target.id === me.id && role !== "admin") {
+  if (target.id === me.id && !canManage(role)) {
     const { count } = await db.from("profiles").select("id", { count: "exact", head: true })
-      .eq("team_id", me.team_id).eq("role", "admin").eq("active", true).is("removed_at", null);
-    if ((count ?? 0) <= 1) throw new HttpError(400, "В команде должен остаться хотя бы один администратор");
+      .eq("team_id", me.team_id).in("role", ["admin", "manager"]).eq("active", true).is("removed_at", null);
+    if ((count ?? 0) <= 1) throw new HttpError(400, "В команде должен остаться хотя бы один администратор или руководитель");
   }
   must(await db.from("profiles").update({ role }).eq("id", target.id), "set role");
   return { ok: true };
@@ -247,7 +250,7 @@ async function setPrivate(req: Request, body: Record<string, unknown>) {
   const userId = String(body.userId || me.id);
   const target = await memberOfTeam(userId, me.team_id);
   if (target.id !== me.id) {
-    if (me.role !== "admin") throw new HttpError(403, "Только для администратора");
+    if (!canManage(me.role)) throw new HttpError(403, "Только для администратора или руководителя");
     if (!value) throw new HttpError(403, "Выключить скрытие задач может только сам человек в своих настройках");
   }
   must(await db.from("profiles").update({ private_tasks: value }).eq("id", target.id), "privacy");
@@ -321,14 +324,15 @@ async function seedDemo(req: Request) {
   const doneAt = (n: number, h = 15) => { const d = addDays(today, n); d.setUTCHours(h - 3, 20); return d.toISOString(); };
 
   // Отделы: добавляем, только если в команде их ещё нет
-  const existingDeps = must(await db.from("departments").select("id, name").eq("team_id", team), "departments") as { id: string; name: string }[];
+  // Отделы у каждого свои: примеры добавляем вам, только если у вас их ещё нет
+  const existingDeps = must(await db.from("departments").select("id, name").eq("owner_id", self), "departments") as { id: string; name: string }[];
   let deps = existingDeps;
   if (!deps.length) {
     deps = must(await db.from("departments").insert([
-      { team_id: team, name: "Marketing B2B", color: "#8BC6F2", position: 1000 },
-      { team_id: team, name: "Inhouse SMM", color: "#C49BF2", position: 2000 },
-      { team_id: team, name: "Комьюнити", color: "#B5F28B", position: 3000 },
-      { team_id: team, name: "Отдел исследований", color: "#F2C98B", position: 4000 },
+      { team_id: team, owner_id: self, name: "Marketing B2B", color: "#8BC6F2", position: 1000 },
+      { team_id: team, owner_id: self, name: "Inhouse SMM", color: "#C49BF2", position: 2000 },
+      { team_id: team, owner_id: self, name: "Комьюнити", color: "#B5F28B", position: 3000 },
+      { team_id: team, owner_id: self, name: "Отдел исследований", color: "#F2C98B", position: 4000 },
     ]).select("id, name"), "departments") as { id: string; name: string }[];
   }
   const depId = (i: number) => deps[i % deps.length]?.id ?? null;
