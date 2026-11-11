@@ -55,7 +55,7 @@ function clean(v: unknown, max = 120): string {
 // ---------------------------------------------------------------------------
 
 function randomPassword(): string {
-  return newToken() + newToken();
+  return newToken(); // 43 символа: Supabase принимает пароли до 72 символов
 }
 
 function checkPassword(p: unknown): string {
