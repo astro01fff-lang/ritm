@@ -23,26 +23,34 @@ const completedDay = (t) => (t.completed_at ? toISO(new Date(t.completed_at)) : 
 
 function compute([s, e]) {
   const todayStr = toISO(today());
-  const people = seesAll() ? activeMembers() : activeMembers().filter((m) => m.id === state.me.id);
+  const person = seesAll() && state.summary.person && state.summary.person !== 'all' ? state.summary.person : null;
+  let people = seesAll() ? activeMembers().filter((m) => !hiddenFromMe(m.id)) : activeMembers().filter((m) => m.id === state.me.id);
+  if (person) people = people.filter((m) => m.id === person);
   const doneIn = (t) => { const d = completedDay(t); return d && d >= s && d <= e; };
-  const openRelevant = (t) => !t.completed_at && (inRange(t, [s, e]) || (t.deadline && t.deadline <= e));
+  // Задача относится к периоду, если на него запланирована (начало периода задачи внутри выбранного),
+  // а задача без периода — если в нём выполнена или в нём её дедлайн
+  const planned = (t) => (t.period_start
+    ? t.period_start >= s && t.period_start <= e
+    : doneIn(t) || (!t.completed_at && t.deadline && t.deadline >= s && t.deadline <= e));
   const overdueAt = (t) => !t.completed_at && t.deadline && t.deadline < todayStr && t.deadline <= e;
 
   const rows = people.map((p) => {
-    const mine = state.tasks.filter((t) => t.assignee_id === p.id);
-    const done = mine.filter(doneIn);
-    const open = mine.filter(openRelevant);
-    const overdue = mine.filter(overdueAt);
-    const minutes = done.reduce((a, t) => a + (t.spent_minutes || 0), 0);
-    const unlogged = done.filter((t) => t.spent_minutes == null).length;
+    const tasks = state.tasks.filter((t) => t.assignee_id === p.id && planned(t));
+    const done = tasks.filter((t) => t.completed_at);
+    const open = tasks.filter((t) => !t.completed_at);
+    const overdue = state.tasks.filter((t) => t.assignee_id === p.id && overdueAt(t));
+    const minutes = tasks.reduce((a, t) => a + (t.spent_minutes || 0), 0);
+    const unlogged = done.filter((t) => !t.spent_minutes).length;
     const goals = state.goals.filter((g) => g.owner_id === p.id && overlaps(g.period_start, g.period_end, s, e));
-    return { p, done, open, overdue, minutes, unlogged, goals, total: done.length + open.length };
+    return { p, tasks, done, open, overdue, minutes, unlogged, goals, total: tasks.length };
   });
 
-  const scopeTasks = seesAll() ? state.tasks.filter((t) => !hiddenFromMe(t.assignee_id)) : state.tasks.filter((t) => t.assignee_id === state.me.id);
-  const done = scopeTasks.filter(doneIn);
-  const minutes = done.reduce((a, t) => a + (t.spent_minutes || 0), 0);
-  const inWork = scopeTasks.filter((t) => !t.completed_at && inRange(t, [s, e]));
+  let scopeTasks = seesAll() ? state.tasks.filter((t) => !hiddenFromMe(t.assignee_id)) : state.tasks.filter((t) => t.assignee_id === state.me.id);
+  if (person) scopeTasks = scopeTasks.filter((t) => t.assignee_id === person);
+  const periodTasks = scopeTasks.filter(planned);
+  const done = periodTasks.filter((t) => t.completed_at);
+  const minutes = periodTasks.reduce((a, t) => a + (t.spent_minutes || 0), 0);
+  const inWork = periodTasks.filter((t) => !t.completed_at);
   const overdue = scopeTasks.filter(overdueAt);
   const leadTimes = done.map((t) => (new Date(t.completed_at) - new Date(t.created_at)) / 86400000).filter((x) => x >= 0);
   const avgDays = leadTimes.length ? leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length : null;
@@ -65,7 +73,7 @@ function compute([s, e]) {
     }
   }
   for (const b of buckets) {
-    const list = done.filter((t) => { const d = completedDay(t); return d >= b.from && d <= b.to; });
+    const list = scopeTasks.filter((t) => { const d = completedDay(t); return d && d >= b.from && d <= b.to; });
     b.n = list.length; b.min = list.reduce((a, t) => a + (t.spent_minutes || 0), 0);
   }
 
@@ -82,24 +90,25 @@ function compute([s, e]) {
   const breakdown = (list, field, noneLabel) => {
     const keys = [...list.map((x) => ({ id: x.id, name: x.name, color: x.color })), { id: null, name: noneLabel, color: null }];
     return keys.map((k) => {
-      const d = done.filter((t) => (t[field] || null) === k.id);
-      const o = scopeTasks.filter((t) => !t.completed_at && (t[field] || null) === k.id && inRange(t, [s, e]));
-      return { ...k, done: d.length, open: o.length, minutes: d.reduce((a, t) => a + (t.spent_minutes || 0), 0) };
+      const all = periodTasks.filter((t) => (t[field] || null) === k.id);
+      const d = all.filter((t) => t.completed_at);
+      return { ...k, done: d.length, open: all.length - d.length, minutes: all.reduce((a, t) => a + (t.spent_minutes || 0), 0) };
     }).filter((x) => x.done || x.open);
   };
   const byDept = (() => {
     const map = new Map();
-    for (const t of [...done, ...scopeTasks.filter((x) => !x.completed_at && inRange(x, [s, e]))]) {
+    for (const t of periodTasks) {
       const d = deptById(t.department_id);
       const k = d ? deptKey(d.name) : '';
       if (!map.has(k)) map.set(k, { id: k, name: d ? d.name : 'Без отдела', color: d ? d.color : null, done: 0, open: 0, minutes: 0 });
       const row = map.get(k);
-      if (t.completed_at && done.includes(t)) { row.done++; row.minutes += t.spent_minutes || 0; } else row.open++;
+      if (t.completed_at) row.done++; else row.open++;
+      row.minutes += t.spent_minutes || 0;
     }
     return [...map.values()].sort((a, b) => (a.id === '') - (b.id === '') || b.done - a.done);
   })();
   const byCat = breakdown(state.categories, 'category_id', 'Без категории');
-  return { rows, done, minutes, inWork, overdue, avgDays, buckets, byWeek, teamGoals, groupList, byDept, byCat };
+  return { rows, done, minutes, inWork, overdue, avgDays, buckets, byWeek, teamGoals, groupList, byDept, byCat, person, periodTasks };
 }
 
 function chart(buckets, byWeek) {
@@ -114,6 +123,29 @@ function chart(buckets, byWeek) {
           <span class="chart-l">${esc(b.label)}</span>
         </div>`).join('')}
     </div>`;
+}
+
+// Таблица задач периода с потраченным временем
+function taskTable(tasks) {
+  if (!tasks.length) return '<p class="muted small">На этот период задач нет.</p>';
+  const sorted = [...tasks].sort((a, b) => (b.spent_minutes || 0) - (a.spent_minutes || 0) || a.title.localeCompare(b.title, 'ru'));
+  const total = sorted.reduce((a, t) => a + (t.spent_minutes || 0), 0);
+  return `
+    <table class="tt">
+      <thead><tr><th>Задача</th><th>Статус</th><th class="tt-hide-sm">Отдел и категория</th><th class="tt-time">Время</th></tr></thead>
+      <tbody>
+        ${sorted.map((t) => {
+          const dep = deptById(t.department_id), cat = catById(t.category_id);
+          return `<tr data-act="openTask" data-id="${t.id}" tabindex="0">
+            <td class="tt-title">${esc(t.title)}</td>
+            <td>${t.completed_at ? `<span class="tt-done">${icon('check', 13)} ${esc(fmtShort(new Date(t.completed_at)))}</span>` : `<span class="muted ${isOverdue(t) ? 'bad' : ''}">${esc(columnById(t.column_id)?.name || '')}</span>`}</td>
+            <td class="tt-hide-sm muted small">${[dep?.name, cat?.name].filter(Boolean).map(esc).join(', ')}</td>
+            <td class="tt-time">${t.spent_minutes ? esc(fmtMinutes(t.spent_minutes)) : '<span class="muted">—</span>'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot><tr><td>Всего за период</td><td></td><td class="tt-hide-sm"></td><td class="tt-time">${esc(fmtMinutes(total) || '0 мин')}</td></tr></tfoot>
+    </table>`;
 }
 
 function breakdownPanel(title, rows) {
@@ -133,6 +165,26 @@ function breakdownPanel(title, rows) {
           </tr>`).join('')}
         </tbody>
       </table>
+    </section>`;
+}
+
+// Выбран один сотрудник: крупно его часы и все задачи периода
+function personFocus(x, title) {
+  if (!x) return '';
+  return `
+    <section class="panel person-focus">
+      <div class="pf-head">
+        ${avatar(x.p, 52)}
+        <div class="pf-id"><b>${esc(fullName(x.p))}</b><span class="muted">${esc(x.p.position || '')}</span></div>
+        <div class="pf-hours"><b>${x.minutes ? fmtMinutes(x.minutes) : '0 ч'}</b><span class="muted">на задачи · ${esc(title)}</span></div>
+      </div>
+      <div class="pf-stats">
+        <span><b>${x.done.length}</b> из ${x.total} выполнено</span>
+        <span><b>${x.open.length}</b> в работе</span>
+        ${x.overdue.length ? `<span class="bad"><b>${x.overdue.length}</b> просрочено</span>` : ''}
+        ${x.unlogged ? `<span class="muted">без указанного времени: ${x.unlogged}</span>` : ''}
+      </div>
+      ${taskTable(x.tasks)}
     </section>`;
 }
 
@@ -173,7 +225,14 @@ export function render() {
           <button class="icon-btn" data-act="sumShift" data-d="1" aria-label="Вперёд">${icon('right')}</button>
           ${offset ? `<button class="btn btn-ghost btn-sm" data-act="sumShift" data-d="0">К текущему</button>` : ''}
         </div>`}
+      ${lead ? `<label class="person-pick"><span class="muted small">Сотрудник</span>
+        <select data-on="sumPerson" aria-label="Сотрудник">
+          <option value="all">Вся команда</option>
+          ${activeMembers().filter((m) => !hiddenFromMe(m.id)).map((m) => `<option value="${m.id}" ${m.id === d.person ? 'selected' : ''}>${esc(fullName(m))}</option>`).join('')}
+        </select></label>` : ''}
     </div>
+
+    ${d.person ? personFocus(d.rows[0], title) : ''}
 
     <div class="kpis">
       <div class="kpi kpi-main"><b>${d.done.length}</b><span>${plural(d.done.length, 'задача выполнена', 'задачи выполнены', 'задач выполнено')}</span></div>
@@ -193,8 +252,8 @@ export function render() {
       ${breakdownPanel('По категориям', d.byCat)}
     </div>
 
-    <h2 class="list-h">${lead ? 'По сотрудникам' : 'Мои итоги'}</h2>
-    <div class="people">
+    ${d.person ? '' : `<h2 class="list-h">${lead ? 'По сотрудникам' : 'Мои итоги'}</h2>`}
+    <div class="people" ${d.person ? 'hidden' : ''}>
       ${d.rows.map((x) => hiddenFromMe(x.p.id) ? `
         <div class="person person-hidden">
           <div class="person-id">${avatar(x.p, 36)}<div><b>${esc(fullName(x.p))}</b><span class="muted small">${esc(x.p.position || '')}</span></div></div>
@@ -211,30 +270,27 @@ export function render() {
           </summary>
           <div class="person-body">
             ${x.unlogged ? `<p class="muted small">Без указанного времени: ${x.unlogged} ${plural(x.unlogged, 'задача', 'задачи', 'задач')}</p>` : ''}
-            ${x.done.length ? `<h4>Выполнено</h4><ul class="mini-rows">${x.done.sort((a, b) => (b.spent_minutes || 0) - (a.spent_minutes || 0)).map((t) => `
-              <li data-act="openTask" data-id="${t.id}" tabindex="0"><span>${esc(t.title)}</span><span class="muted small">${esc(fmtShort(new Date(t.completed_at)))}</span><b>${t.spent_minutes ? esc(fmtMinutes(t.spent_minutes)) : '—'}</b></li>`).join('')}</ul>` : ''}
-            ${x.open.length ? `<h4>Не завершено</h4><ul class="mini-rows">${x.open.map((t) => `
-              <li data-act="openTask" data-id="${t.id}" tabindex="0"><span>${esc(t.title)}</span><span class="muted small">${esc(columnById(t.column_id)?.name || '')}</span><b class="${isOverdue(t) ? 'bad' : ''}">${t.deadline ? esc(fmtShort(t.deadline)) : ''}</b></li>`).join('')}</ul>` : ''}
+            ${taskTable(x.tasks)}
             ${x.goals.length ? `<h4>Личные цели</h4><ul class="sum-goals">${x.goals.map(goalRow).join('')}</ul>` : ''}
-            ${!x.done.length && !x.open.length ? '<p class="muted small">Задач в этом периоде нет.</p>' : ''}
           </div>
         </details>`).join('')}
     </div>
 
-    ${d.teamGoals.length ? `<section class="panel"><h2 class="panel-h">Цели команды</h2><ul class="sum-goals">${d.teamGoals.map(goalRow).join('')}</ul></section>` : ''}
+    ${d.teamGoals.length && !d.person ? `<section class="panel"><h2 class="panel-h">Цели команды</h2><ul class="sum-goals">${d.teamGoals.map(goalRow).join('')}</ul></section>` : ''}
 
-    ${d.groupList.length ? `<section class="panel"><h2 class="panel-h">Задачи, назначенные нескольким</h2>
+    ${d.groupList.length && !d.person ? `<section class="panel"><h2 class="panel-h">Задачи, назначенные нескольким</h2>
       <ul class="sum-goals">${d.groupList.map((g) => {
         const done = g.filter((t) => t.completed_at).length; const pct = Math.round((done / g.length) * 100);
         return `<li data-act="openTask" data-id="${g[0].id}" tabindex="0" class="clickable"><span class="sg-title">${esc(g[0].title)}</span><div class="bar"><i style="width:${pct}%"></i></div><b>${done} из ${g.length}</b><span></span></li>`;
       }).join('')}</ul></section>` : ''}
 
-    <p class="note muted small">Время — то, что люди указали при выполнении задач. Рейтинга нет: итоги нужны, чтобы видеть нагрузку, а не сравнивать людей.</p>
+    <p class="note muted small">Время — сумма по задачам, запланированным на выбранный период, включая ещё не завершённые и время подзадач. Рейтинга нет: итоги нужны, чтобы видеть нагрузку, а не сравнивать людей.</p>
   `;
 }
 
 actions.sumScope = (el) => { state.summary.scope = el.dataset.scope; state.summary.offset = 0; hooks.render(); };
 actions.sumShift = (el) => { const d = Number(el.dataset.d); state.summary.offset = d === 0 ? 0 : state.summary.offset + d; hooks.render(); };
+inputs.sumPerson = (el) => { state.summary.person = el.value; hooks.render(); };
 inputs.sumFrom = (el) => { state.summary.from = el.value; hooks.render(); };
 inputs.sumTo = (el) => { state.summary.to = el.value; hooks.render(); };
 
@@ -259,7 +315,7 @@ actions.exportTasks = () => {
   const r = range(); const d = compute(r);
   const rows = [['Задача', 'Исполнитель', 'Отдел', 'Категория', 'Статус', 'Тип', 'Приоритет', 'Период', 'Дедлайн', 'Выполнена', 'Потрачено, мин']];
   for (const x of d.rows) {
-    for (const t of [...x.done, ...x.open]) {
+    for (const t of x.tasks) {
       rows.push([
         t.title, fullName(x.p), deptById(t.department_id)?.name || '', catById(t.category_id)?.name || '',
         columnById(t.column_id)?.name || '', t.kind === 'team' ? 'Командная' : 'Личная',

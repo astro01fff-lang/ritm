@@ -958,3 +958,33 @@ button.ref-chip:hover { border-color: var(--c); }
 .board.zoom-fit .col:hover .col-head .icon-btn, .board.zoom-fit .col-head .icon-btn:focus-visible { opacity: 1; }
 .board.zoom-fit .col-grip { display: none; }
 @media (hover: none) { .board.zoom-fit .col-head .icon-btn { opacity: 1; } }
+
+/* итоги: выбор сотрудника и таблица задач */
+.person-pick { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.person-pick select { width: auto; min-width: 200px; border-radius: 999px; padding: 7px 34px 7px 14px; background-color: var(--card); font-weight: 600; }
+.tt { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+.tt th { text-align: left; font-weight: 500; color: var(--text2); font-size: 12.5px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.tt td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tt tbody tr { cursor: pointer; }
+.tt tbody tr:hover td { background: var(--bg2); }
+.tt-title { font-weight: 500; }
+.tt-time { text-align: right; white-space: nowrap; font-weight: 600; width: 1%; }
+.tt-done { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); white-space: nowrap; }
+.tt tfoot td { font-weight: 700; border-bottom: 0; padding-top: 12px; }
+.tt tfoot .tt-time { font: 700 16px var(--display); }
+.person-body .tt { margin-bottom: 6px; }
+.person-focus { margin-top: 0; margin-bottom: 14px; }
+.pf-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.pf-id { display: flex; flex-direction: column; flex: 1 1 200px; }
+.pf-id b { font-size: 18px; }
+.pf-hours { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.pf-hours b { font: 700 40px/1 var(--display); letter-spacing: -.03em; }
+.pf-hours span { font-size: 13px; margin-top: 4px; }
+.pf-stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 16px 0 6px; font-size: 14px; color: var(--text2); }
+.pf-stats b { color: var(--text); }
+@media (max-width: 860px) {
+  .person-pick { margin-left: 0; width: 100%; }
+  .person-pick select { flex: 1; }
+  .tt-hide-sm { display: none; }
+  .pf-hours { align-items: flex-start; text-align: left; }
+}
