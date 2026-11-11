@@ -27,7 +27,7 @@ export function render() {
         <li class="member ${m.active ? '' : 'is-off'}">
           ${avatar(m, 40)}
           <div class="member-main">
-            <b>${esc(fullName(m))}${m.id === state.me.id ? ' <span class="muted">(вы)</span>' : ''}${m.is_demo ? ' <span class="tag">демо</span>' : ''}${m.private_tasks ? ` <span class="tag tag-private" title="Личные задачи видит только ${m.id === state.me.id ? 'вы' : 'он(а) сам(а)'}">${icon('lock', 12)} задачи скрыты</span>` : ''}</b>
+            <b>${esc(fullName(m))}${m.id === state.me.id ? ' <span class="muted">(вы)</span>' : ''}${m.is_demo ? ' <span class="tag">демо</span>' : ''}</b>
             <span class="muted small">${esc(m.position || 'Должность не указана')}${m.city ? `, ${esc(m.city)}` : ''}</span>
             <span class="muted small">${m.active ? (m.last_login_at ? `Заходил(а) ${esc(timeAgo(m.last_login_at))}` : 'Ещё не входил(а)') : 'Доступ отозван'}</span>
           </div>
@@ -36,7 +36,6 @@ export function render() {
               ${Object.entries(ROLE_LABELS).map(([k, l]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
             <div class="member-actions">
-              ${!m.private_tasks && m.role === 'manager' ? `<button class="btn btn-ghost btn-sm" data-act="makePrivate" data-id="${m.id}" title="Личные задачи этого человека не увидит никто, кроме него">${icon('lock', 15)} Скрыть задачи</button>` : ''}
               <button class="btn btn-ghost btn-sm" data-act="newLink" data-id="${m.id}" title="Новая ссылка сбрасывает пароль">${icon('link', 15)} ${m.active ? 'Новая ссылка / сброс пароля' : 'Вернуть доступ'}</button>
               ${m.id !== state.me.id && m.active ? `<button class="btn btn-ghost btn-sm" data-act="revoke" data-id="${m.id}">Отозвать доступ</button>` : ''}
               ${m.id !== state.me.id ? `<button class="icon-btn" data-act="removeMember" data-id="${m.id}" aria-label="Удалить из команды" title="Удалить из команды">${icon('trash', 16)}</button>` : ''}
@@ -53,7 +52,6 @@ export function render() {
         <dt>Руководитель</dt><dd>Видит личные задачи и итоги всех сотрудников. Управляет командой: участники, роли, ссылки, колонки, категории, общие цели.</dd>
         <dt>Администратор</dt><dd>Управляет командой так же, как руководитель, но видит только свои и командные задачи. Чужие личные задачи не видит.</dd>
         <dt>Участник</dt><dd>Свои задачи и командные. Командную задачу может поставить любому коллеге или всем. Личные задачи коллег не видит.</dd>
-        <dt>${icon('lock', 14)} Задачи скрыты</dt><dd>Личные задачи этого человека не видят даже руководители. Командные задачи и задачи, которые вы ему поставили, остаются видны. Отключить скрытие может только он сам в своих настройках.</dd>
       </dl>
     </section>
 
@@ -159,20 +157,6 @@ actions.newLink = async (el) => {
     await hooks.refresh();
     showLink(fullName(m), res.token, self ? { title: 'Ваша новая ссылка', note: 'Сохраните её в закладки или заметки. При следующем входе откройте её и задайте новый пароль.' } : {});
   } catch (e) { toast(e.message, 'error'); }
-};
-
-actions.makePrivate = async (el) => {
-  const m = memberById(el.dataset.id); if (!m) return;
-  const self = m.id === state.me.id;
-  const ok = await confirmDialog({
-    title: self ? 'Скрыть ваши личные задачи?' : `Скрыть задачи ${fullName(m)}?`,
-    text: self ? 'Ваши личные задачи перестанут видеть все, включая администраторов. Вернуть видимость можно в настройках.'
-      : 'Его личные задачи перестанут видеть все, включая вас. Командные задачи и задачи, которые вы ему поставите, останутся видны. Вернуть видимость сможет только он сам — вы не сможете.',
-    ok: 'Скрыть задачи', danger: false,
-  });
-  if (!ok) return;
-  try { await api.setPrivate(m.id, true); toast('Задачи скрыты', 'ok'); hooks.refresh(); }
-  catch (e) { toast(e.message, 'error'); }
 };
 
 actions.revoke = async (el) => {

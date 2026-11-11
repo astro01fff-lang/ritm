@@ -49,12 +49,6 @@ export function render() {
     </section>
 
     <section class="panel settings">
-      <h2 class="panel-h">Видимость моих задач</h2>
-      <label class="switch-row"><span>Мои личные задачи вижу только я<br><small class="muted">Их не увидят ни коллеги, ни руководители. Командные задачи и задачи, которые вам поставили другие, остаются видны их авторам.</small></span>
-        <input type="checkbox" role="switch" data-on="privateTasks" ${me.private_tasks ? 'checked' : ''}><i class="switch"></i></label>
-    </section>
-
-    <section class="panel settings">
       <h2 class="panel-h">Оформление</h2>
       <div class="seg seg-wide">
         <label><input type="radio" name="theme" value="dark" data-on="theme" ${me.theme !== 'light' ? 'checked' : ''}><span>${icon('moon', 16)} Тёмная</span></label>
@@ -154,11 +148,3 @@ document.addEventListener('submit', async (e) => {
   } catch (ex) { err.textContent = ex.message; }
 });
 
-inputs.privateTasks = async (el) => {
-  try {
-    await api.setPrivate(state.me.id, el.checked);
-    state.me.private_tasks = el.checked;
-    const m = state.members.find((x) => x.id === state.me.id); if (m) m.private_tasks = el.checked;
-    toast(el.checked ? 'Теперь ваши личные задачи видите только вы' : 'Ваши задачи снова видит руководство', 'ok', 3000);
-  } catch (e) { toast(e.message, 'error'); el.checked = !el.checked; }
-};
